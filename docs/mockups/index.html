@@ -1,0 +1,2410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clan MVP — Design Mockups</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <style>
+    /* ─── Design tokens ─────────────────────────────────────────────── */
+    :root {
+      --sidebar-bg:       #1A1D21;
+      --sidebar-text:     #C9D1D9;
+      --sidebar-hover:    #27292D;
+      --sidebar-badge:    #E01E5A;
+      --sidebar-divider:  #2E3136;
+      --canvas:           #FFFFFF;
+      --canvas-subtle:    #F7F8FA;
+      --border:           #E4E8EE;
+      --border-strong:    #C1C9D2;
+      --text:             #111827;
+      --text-soft:        #6B7280;
+      --text-muted:       #9CA3AF;
+      --primary:          #4F46E5;
+      --primary-hover:    #4338CA;
+      --primary-subtle:   #EEF2FF;
+      --success:          #059669;
+      --success-subtle:   #ECFDF5;
+      --warning:          #D97706;
+      --warning-subtle:   #FFFBEB;
+      --error:            #DC2626;
+      --error-subtle:     #FEF2F2;
+      --plan-bg:          #F5F3FF;
+      --plan-border:      #4F46E5;
+      --shadow-md:        0 4px 12px rgba(0,0,0,0.10);
+      --shadow-lg:        0 8px 32px rgba(0,0,0,0.16);
+    }
+
+    /* ─── Avatars (human faces via pravatar.cc) ──────────────────────── */
+    /*
+      Riley  (Ops)         → https://i.pravatar.cc/150?img=68
+      Sam    (Engineering) → https://i.pravatar.cc/150?img=33
+      Alex   (Product)     → https://i.pravatar.cc/150?img=57
+      Jordan (Design)      → https://i.pravatar.cc/150?img=47
+      Morgan (Security)    → https://i.pravatar.cc/150?img=14
+      Quinn  (QA)          → https://i.pravatar.cc/150?img=26
+      Founder (You)        → https://i.pravatar.cc/150?img=3
+    */
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', -apple-system, sans-serif;
+           background: #EAECF0; color: var(--text); font-size: 14px; line-height: 1.5; }
+    a { color: var(--primary); text-decoration: none; }
+    img { display: block; }
+
+    /* ─── Review chrome ─────────────────────────────────────────────── */
+    .review-bar {
+      position: fixed; top: 0; left: 0; right: 0; height: 44px; z-index: 200;
+      background: #0F1117; color: #fff; display: flex; align-items: center;
+      padding: 0 24px; gap: 16px; font-size: 13px; font-weight: 500;
+      border-bottom: 1px solid #2E3136;
+    }
+    .review-bar .logo   { font-weight: 600; letter-spacing: 0.08em; }
+    .review-bar .sep    { color: #3E4146; }
+    .review-bar .sub    { color: #9CA3AF; font-weight: 400; }
+    .review-bar .pill   {
+      margin-left: auto; background: #1F2937; border: 1px solid #374151;
+      color: #D1D5DB; border-radius: 9999px; padding: 2px 10px; font-size: 11px;
+    }
+
+    .side-nav {
+      position: fixed; top: 44px; left: 0; bottom: 0; width: 220px; z-index: 100;
+      background: #0F1117; overflow-y: auto; padding: 16px 0;
+      border-right: 1px solid #1F2937;
+    }
+    .side-nav a {
+      display: block; padding: 7px 20px; color: #9CA3AF; font-size: 12px;
+      text-decoration: none; border-left: 2px solid transparent; transition: all 80ms;
+    }
+    .side-nav a:hover   { color: #fff; background: #1F2937; }
+    .side-nav a.active  { color: #fff; border-left-color: var(--primary); background: #1a1d21; }
+    .side-nav .nav-grp  { padding: 12px 20px 4px; font-size: 10px; font-weight: 600;
+                          letter-spacing: 0.08em; text-transform: uppercase; color: #4B5563; }
+
+    .gallery { margin-left: 220px; padding-top: 44px; }
+
+    .screen-section { padding: 40px 40px 64px; border-bottom: 1px solid #D1D5DB; }
+    .screen-section:last-child { border-bottom: none; }
+    .screen-lbl   { font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+                    text-transform: uppercase; color: #9CA3AF; margin-bottom: 8px; }
+    .screen-title { font-size: 20px; font-weight: 600; color: #111827; margin-bottom: 4px; }
+    .screen-desc  { font-size: 13px; color: #6B7280; margin-bottom: 24px; }
+
+    .frame-wrap { display: flex; justify-content: center; }
+
+    /* Onboarding frame */
+    .frame-ob {
+      background: var(--canvas); width: 100%; max-width: 1100px; min-height: 520px;
+      border-radius: 12px; box-shadow: var(--shadow-lg);
+      display: flex; align-items: center; justify-content: center; padding: 48px;
+    }
+    .ob-card { width: 100%; max-width: 420px; }
+
+    /* Full app frame */
+    .frame-app {
+      width: 100%; max-width: 1100px; height: 680px; border-radius: 12px;
+      box-shadow: var(--shadow-lg); overflow: hidden;
+      display: flex; flex-direction: column; background: var(--canvas);
+    }
+
+    /* ─── Top bar ────────────────────────────────────────────────────── */
+    .top-bar {
+      height: 48px; background: var(--sidebar-bg);
+      display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0;
+      border-bottom: 1px solid var(--sidebar-divider);
+    }
+    .top-bar .brand   { font-size: 16px; font-weight: 600; color: #fff; letter-spacing: 0.08em; }
+    .top-bar .vsep    { width: 1px; height: 16px; background: var(--sidebar-divider); }
+    .top-bar .wname   { font-size: 13px; color: var(--sidebar-text); }
+    .top-bar .actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+    .ac { /* action counter */
+      display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500;
+      color: var(--sidebar-text); padding: 4px 8px; border-radius: 4px;
+    }
+    .ac.warn { color: var(--warning); background: rgba(217,119,6,0.12); }
+    .ac.cap  { color: var(--error);   background: rgba(220,38,38,0.12); }
+
+    /* ─── App body ───────────────────────────────────────────────────── */
+    .app-body { display: flex; flex: 1; overflow: hidden; }
+
+    /* ─── Sidebar ────────────────────────────────────────────────────── */
+    .sidebar {
+      width: 240px; flex-shrink: 0; background: var(--sidebar-bg);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .ws-name {
+      height: 40px; display: flex; align-items: center; padding: 0 16px;
+      font-size: 15px; font-weight: 600; color: #fff; flex-shrink: 0;
+      border-bottom: 1px solid var(--sidebar-divider);
+    }
+
+    /* Sidebar tab switcher */
+    .sb-tabs {
+      display: flex; flex-shrink: 0; border-bottom: 1px solid var(--sidebar-divider);
+    }
+    .sb-tab {
+      flex: 1; height: 34px; display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 500; color: rgba(201,209,217,0.6);
+      cursor: pointer; border-bottom: 2px solid transparent; transition: all 80ms;
+    }
+    .sb-tab:hover  { color: var(--sidebar-text); }
+    .sb-tab.active { color: #fff; border-bottom-color: var(--primary); }
+
+    .sb-scroll { flex: 1; overflow-y: auto; }
+
+    .sb-grp {
+      font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em;
+      color: rgba(201,209,217,0.6); padding: 16px 16px 4px;
+    }
+    .ch-row {
+      display: flex; align-items: center; padding: 0 8px 0 16px;
+      height: 28px; font-size: 14px; color: var(--sidebar-text);
+      border-radius: 6px; margin: 0 8px; cursor: pointer; gap: 4px;
+    }
+    .ch-row:hover  { background: var(--sidebar-hover); color: #fff; }
+    .ch-row.active { background: var(--sidebar-hover); color: #fff; font-weight: 600; }
+    .ch-hash { opacity: 0.7; margin-right: 2px; }
+    .ch-badge {
+      margin-left: auto; background: var(--sidebar-badge); color: #fff;
+      font-size: 11px; font-weight: 500; padding: 0 5px; height: 18px;
+      border-radius: 9999px; display: flex; align-items: center; min-width: 18px; justify-content: center;
+    }
+    .ch-dot { margin-left: auto; width: 8px; height: 8px; background: var(--sidebar-badge); border-radius: 9999px; }
+
+    /* Team tab — teammate roster rows */
+    .tm-row {
+      display: flex; align-items: center; padding: 8px 12px; gap: 10px;
+      cursor: pointer; margin: 0 4px; border-radius: 6px;
+    }
+    .tm-row:hover  { background: var(--sidebar-hover); }
+    .tm-row.active { background: var(--sidebar-hover); }
+    .tm-avatar-wrap {
+      position: relative; width: 32px; height: 32px; flex-shrink: 0;
+    }
+    .tm-avatar {
+      width: 32px; height: 32px; border-radius: 9999px; overflow: hidden;
+    }
+    .tm-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .tm-online {
+      position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px;
+      background: var(--success); border-radius: 9999px; border: 2px solid var(--sidebar-bg);
+    }
+    .tm-online.idle { background: var(--warning); }
+    .tm-online.offline { background: var(--border-strong); }
+    .tm-info { flex: 1; min-width: 0; }
+    .tm-name { font-size: 13px; font-weight: 500; color: #fff; line-height: 16px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tm-role { font-size: 11px; color: rgba(201,209,217,0.6); line-height: 14px; }
+
+    .hire-link {
+      padding: 12px 16px; font-size: 13px; color: var(--sidebar-text);
+      display: flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0;
+      border-top: 1px solid var(--sidebar-divider);
+    }
+    .hire-link:hover { color: #fff; }
+
+    /* ─── Channel area ───────────────────────────────────────────────── */
+    .channel-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .ch-header {
+      height: 48px; flex-shrink: 0; display: flex; align-items: center;
+      padding: 0 24px; border-bottom: 1px solid var(--border);
+      font-size: 18px; font-weight: 600; color: var(--text); gap: 4px;
+    }
+    .ch-header .hash { color: var(--text-muted); font-weight: 400; }
+    .ch-header .role-tag {
+      font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 9999px;
+      margin-left: 6px;
+    }
+
+    .thread {
+      flex: 1; overflow-y: auto; padding: 24px 24px 12px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+
+    /* ─── Messages ───────────────────────────────────────────────────── */
+    .msg-row {
+      display: flex; gap: 12px; padding: 6px 8px; border-radius: 4px; margin: 0 -8px;
+    }
+    .msg-row:hover { background: var(--canvas-subtle); }
+
+    .avatar {
+      width: 36px; height: 36px; border-radius: 9999px; flex-shrink: 0;
+      overflow: hidden;
+    }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .avatar.you {
+      background: var(--primary-subtle); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600;
+    }
+
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+    .msg-author { font-size: 15px; font-weight: 600; color: var(--text); }
+    .role-chip {
+      font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 4px;
+    }
+    .role-chip.ops         { background: #EDE9FE; color: #6D28D9; }
+    .role-chip.engineering { background: #E0F2FE; color: #0369A1; }
+    .role-chip.product     { background: #FEF3C7; color: #92400E; }
+    .role-chip.design      { background: #FCE7F3; color: #9D174D; }
+    .role-chip.security    { background: #FEE2E2; color: #991B1B; }
+    .role-chip.qa          { background: #D1FAE5; color: #065F46; }
+    .msg-time { font-size: 11px; color: var(--text-muted); }
+    .msg-text { font-size: 15px; color: var(--text); line-height: 22px; }
+
+    .sys-msg {
+      font-size: 13px; color: var(--text-muted); padding: 6px 8px;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* Consecutive messages */
+    .msg-cont { padding-left: 56px; margin: 0 -8px 0; }
+    .msg-cont:hover { background: var(--canvas-subtle); padding: 2px 8px 2px 56px; border-radius: 4px; }
+    .msg-cont .msg-text { font-size: 15px; color: var(--text); line-height: 22px; }
+
+    /* ─── Plan card ──────────────────────────────────────────────────── */
+    .plan-card {
+      margin-top: 8px; background: var(--plan-bg);
+      border: 1px solid rgba(79,70,229,0.2); border-left: 3px solid var(--plan-border);
+      border-radius: 8px; padding: 16px; max-width: 440px;
+    }
+    .plan-hdr  { display: flex; align-items: center; gap: 6px;
+                 font-size: 14px; font-weight: 600; color: var(--primary); }
+    .plan-body { font-size: 14px; color: var(--text); margin-top: 8px; line-height: 20px; }
+    .plan-btns { display: flex; gap: 8px; margin-top: 16px; }
+
+    .plan-card.success {
+      background: var(--success-subtle);
+      border-color: rgba(5,150,105,0.2); border-left-color: var(--success);
+    }
+    .plan-card.success .plan-hdr  { color: var(--success); }
+    .plan-card.success .plan-body { color: var(--text-soft); font-size: 13px; }
+    .plan-card.fail {
+      background: var(--error-subtle);
+      border-color: rgba(220,38,38,0.2); border-left-color: var(--error);
+    }
+    .plan-card.fail .plan-hdr { color: var(--error); }
+
+    /* ─── Buttons ────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500;
+      padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;
+    }
+    .btn-p  { background: var(--primary); color: #fff; }
+    .btn-p:hover { background: var(--primary-hover); }
+    .btn-s  { background: transparent; color: var(--text-soft); border: 1px solid var(--border); }
+    .btn-s:hover { background: var(--canvas-subtle); }
+    .btn-full { width: 100%; }
+    .btn-lg   { padding: 11px 24px; font-size: 15px; }
+
+    /* ─── Message input ──────────────────────────────────────────────── */
+    .input-area {
+      flex-shrink: 0; padding: 12px 24px 16px;
+      border-top: 1px solid var(--border); background: var(--canvas);
+    }
+    .msg-input {
+      width: 100%; padding: 11px 16px; border: 1px solid var(--border);
+      border-radius: 8px; background: var(--canvas-subtle);
+      font-size: 15px; color: var(--text-muted); font-family: 'Inter', sans-serif;
+      resize: none; outline: none;
+    }
+    .msg-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.12); }
+    .msg-input.locked { background: #F3F4F6; cursor: not-allowed; }
+
+    /* ─── Onboarding components ──────────────────────────────────────── */
+    .prog-row { display: flex; align-items: center; gap: 8px; margin-bottom: 32px; }
+    .dot  { width: 8px; height: 8px; border-radius: 9999px; background: var(--border-strong); }
+    .dot.f { background: var(--primary); }
+    .dot.c { background: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.2); }
+    .step-lbl { margin-left: auto; font-size: 13px; color: var(--text-muted); }
+
+    .ob-h  { font-size: 24px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .ob-s  { font-size: 14px; color: var(--text-soft); margin-bottom: 24px; }
+    .ob-inp {
+      width: 100%; padding: 11px 16px; border: 1px solid var(--border-strong);
+      border-radius: 6px; background: #fff; font-size: 15px; color: var(--text);
+      font-family: 'Inter', sans-serif; outline: none;
+    }
+    .ob-inp.focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.12); }
+    .ob-acts { display: flex; align-items: center; justify-content: space-between; margin-top: 24px; }
+    .back    { font-size: 14px; color: var(--primary); cursor: pointer; }
+
+    /* Template cards */
+    .tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .tpl-card {
+      padding: 20px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    }
+    .tpl-card:hover { border-color: var(--primary); }
+    .tpl-card.sel   { border: 2px solid var(--primary); background: var(--primary-subtle); }
+    .tc-icon  { font-size: 20px; margin-bottom: 8px; }
+    .tc-name  { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .tc-roles { font-size: 12px; color: var(--text-soft); line-height: 18px; }
+    .tc-count { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .tc-pop   { display: inline-block; font-size: 10px; font-weight: 500; color: var(--primary);
+                background: var(--primary-subtle); padding: 2px 6px; border-radius: 4px; margin-top: 6px; }
+    .tc-tools { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+    /* Working style cards */
+    .ws-stack  { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .ws-card   { padding: 20px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+    .ws-card:hover { border-color: var(--primary); }
+    .ws-card.sel   { border: 2px solid var(--primary); background: var(--primary-subtle); }
+    .ws-chdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .ws-lbl  { font-size: 15px; font-weight: 600; color: var(--text); }
+    .rec-badge {
+      font-size: 10px; font-weight: 500; color: var(--primary); background: var(--primary-subtle);
+      padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(79,70,229,0.2);
+    }
+    .ws-desc { font-size: 14px; color: var(--text-soft); line-height: 20px; }
+
+    /* GitHub screen */
+    .gh-btn {
+      width: 100%; padding: 12px; border: 1px solid var(--border-strong); border-radius: 6px;
+      background: #fff; font-size: 14px; font-weight: 500; color: var(--text);
+      display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+    }
+    .or-row { text-align: center; color: var(--text-muted); font-size: 13px;
+              margin: 16px 0; display: flex; align-items: center; gap: 12px; }
+    .or-line { flex: 1; height: 1px; background: var(--border); }
+    .skip    { text-align: center; font-size: 13px; color: var(--primary); cursor: pointer; }
+
+    /* Modal */
+    .modal-panel {
+      background: #fff; border-radius: 12px; box-shadow: var(--shadow-lg);
+      width: 480px; max-width: calc(100% - 32px);
+    }
+    .modal-hdr {
+      padding: 24px 24px 20px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .modal-title { font-size: 20px; font-weight: 600; color: var(--text); }
+    .modal-close {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); cursor: pointer; border-radius: 4px; font-size: 18px;
+    }
+    .modal-body { padding: 20px 24px; }
+    .modal-foot { padding: 0 24px 24px; display: flex; gap: 12px; }
+
+    .action-box {
+      background: var(--canvas-subtle); border: 1px solid var(--border);
+      border-radius: 6px; padding: 16px; margin: 12px 0;
+    }
+    .action-item { display: flex; gap: 12px; margin-bottom: 10px; font-size: 14px; color: var(--text); line-height: 22px; }
+    .action-item:last-child { margin-bottom: 0; }
+    .action-num { font-weight: 600; color: var(--primary); min-width: 20px; }
+    .action-cost { font-size: 13px; color: var(--text-soft); margin-top: 16px; }
+
+    /* Hire modal */
+    .hire-modal { width: 560px; }
+    .role-grid  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 16px 0; }
+    .role-card  { padding: 16px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+    .role-card:hover:not(.hired) { border-color: var(--primary); background: var(--primary-subtle); }
+    .role-card.sel    { border: 2px solid var(--primary); background: var(--primary-subtle); }
+    .role-card.hired  { opacity: 0.5; cursor: not-allowed; }
+    .rc-name  { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .rc-desc  { font-size: 12px; color: var(--text-soft); line-height: 16px; }
+    .rc-hired { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500;
+                color: var(--success); background: var(--success-subtle);
+                padding: 2px 6px; border-radius: 4px; margin-top: 6px; }
+
+    .tool-section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
+    .tool-lbl  { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 10px; }
+    .tool-row  { display: flex; align-items: center; gap: 8px; height: 28px; font-size: 13px; }
+    .tdot      { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
+    .tdot.ok   { background: var(--success); }
+    .tdot.off  { background: var(--border-strong); }
+    .tool-ok   { color: var(--success); margin-left: auto; }
+    .tool-link { color: var(--primary); margin-left: auto; cursor: pointer; }
+    .tool-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+    .name-label { font-size: 13px; font-weight: 500; color: var(--text); margin: 16px 0 6px; }
+    .name-input {
+      width: 100%; padding: 9px 14px; border: 1px solid var(--border-strong);
+      border-radius: 6px; font-size: 14px; font-family: 'Inter', sans-serif; color: var(--text); outline: none;
+    }
+
+    /* Action cap banners */
+    .cap-banner {
+      margin: 0 24px 12px; padding: 12px 16px; border-radius: 6px;
+      display: flex; flex-direction: column; gap: 6px; font-size: 13px;
+    }
+    .cap-banner.warn { background: var(--warning-subtle); border: 1px solid rgba(217,119,6,0.3); border-left: 3px solid var(--warning); }
+    .cap-banner.cap  { background: var(--error-subtle);   border: 1px solid rgba(220,38,38,0.3);  border-left: 3px solid var(--error); }
+    .banner-row  { display: flex; align-items: center; gap: 8px; }
+    .banner-link { font-size: 13px; font-weight: 500; cursor: pointer; }
+
+    /* Settings */
+    .settings-area { flex: 1; overflow-y: auto; padding: 32px; background: var(--canvas); }
+    .stabs  { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+    .stab   { padding: 0 16px; height: 40px; display: flex; align-items: center;
+              font-size: 14px; color: var(--text-soft); cursor: pointer;
+              border-bottom: 2px solid transparent; }
+    .stab:hover { color: var(--text); }
+    .stab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--primary); }
+    .s-h { font-size: 24px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .s-sub { font-size: 14px; color: var(--text-soft); margin-bottom: 32px; line-height: 20px; }
+
+    .rules-card { border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+    .rules-card.locked { background: var(--canvas-subtle); }
+    .rc-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .rc-title { font-size: 14px; font-weight: 600; color: var(--text); }
+    .rc-sub   { font-size: 13px; color: var(--text-soft); margin-bottom: 16px; }
+    .lock-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0;
+                border-bottom: 1px solid var(--border); }
+    .lock-row:last-child { border-bottom: none; }
+    .lock-chk { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--primary);
+                background: var(--primary); flex-shrink: 0; margin-top: 2px; opacity: 0.5;
+                display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; }
+    .lock-lbl { font-size: 14px; color: var(--text); line-height: 20px; }
+    .cat-lbl  { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+                color: var(--text-muted); padding: 16px 0 8px;
+                border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+    .tgl-row  { display: flex; justify-content: space-between; align-items: center; height: 40px;
+                font-size: 14px; color: var(--text); }
+    .toggle   { width: 36px; height: 20px; border-radius: 9999px; position: relative; cursor: pointer; flex-shrink: 0; }
+    .toggle.on  { background: var(--primary); }
+    .toggle.off { background: var(--border-strong); }
+    .tthumb { position: absolute; top: 2px; width: 16px; height: 16px;
+              background: #fff; border-radius: 9999px; transition: left 200ms; }
+    .toggle.on  .tthumb { left: calc(100% - 18px); }
+    .toggle.off .tthumb { left: 2px; }
+
+    /* Standup messages */
+    .standup-msg {
+      background: var(--canvas-subtle); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px; margin-top: 8px; max-width: 480px; font-size: 14px; line-height: 22px;
+    }
+    .su-section { margin-top: 6px; }
+    .su-label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 2px; }
+    .su-content { color: var(--text); }
+    .su-none { color: var(--text-muted); font-style: italic; }
+
+    /* Retro messages */
+    .retro-card {
+      background: #fff; border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px; margin-top: 8px; max-width: 480px;
+    }
+    .retro-section { margin-bottom: 10px; }
+    .retro-section:last-child { margin-bottom: 0; }
+    .retro-label { font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+                   text-transform: uppercase; margin-bottom: 4px; }
+    .retro-label.went  { color: #059669; }
+    .retro-label.better{ color: #D97706; }
+    .retro-label.try   { color: #4F46E5; }
+    .retro-content { font-size: 14px; color: var(--text); line-height: 20px; }
+
+    /* Feasibility cards */
+    .flag-card {
+      border-radius: 8px; padding: 16px; max-width: 440px; margin-top: 8px;
+    }
+    .flag-card.minor { background: var(--success-subtle); border: 1px solid rgba(5,150,105,0.2); border-left: 3px solid var(--success); }
+    .flag-card.major { background: var(--warning-subtle); border: 1px solid rgba(217,119,6,0.2); border-left: 3px solid var(--warning); }
+    .flag-card.block { background: var(--error-subtle); border: 1px solid rgba(220,38,38,0.2); border-left: 3px solid var(--error); }
+    .flag-hdr  { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600;
+                 color: var(--text); margin-bottom: 8px; }
+    .flag-hdr.ok { color: var(--success); }
+    .flag-sum  { font-size: 14px; color: var(--text); line-height: 20px; margin-bottom: 8px; }
+    .flag-opts { font-size: 13px; color: var(--text-soft); margin-left: 8px; }
+    .flag-opts li { margin-bottom: 4px; list-style: none; }
+    .flag-opts li::before { content: "·  "; }
+    .flag-btns { display: flex; gap: 8px; margin-top: 14px; }
+
+    /* Helpers */
+    .state-tag {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px;
+      border-radius: 9999px; margin-bottom: 12px;
+    }
+    .tag-blue  { background: var(--primary-subtle); color: var(--primary); }
+    .tag-green { background: #DCFCE7; color: #166534; }
+    .tag-red   { background: #FEF2F2; color: #991B1B; }
+
+    .divider {
+      display: flex; align-items: center; gap: 12px; margin: 28px 0;
+      font-size: 11px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .annotation {
+      margin-top: 16px; padding: 12px 16px; background: #FFFDF0;
+      border: 1px solid #FEF08A; border-radius: 6px; font-size: 12px;
+      color: #713F12; line-height: 18px;
+    }
+    .annotation strong { font-weight: 600; }
+    .annotation ul { margin: 4px 0 0 16px; }
+    .annotation ul li { margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     REVIEW CHROME
+════════════════════════════════════════════════════════════════════ -->
+<header class="review-bar">
+  <span class="logo">CLAN</span>
+  <span class="sep">|</span>
+  <span class="sub">Design Mockups — MVP v1.1</span>
+  <span class="pill">15 screens · 2026-04-22</span>
+</header>
+
+<nav class="side-nav">
+  <div class="nav-grp">Onboarding</div>
+  <a href="#s1">1. Welcome</a>
+  <a href="#s2">2. Name company</a>
+  <a href="#s3">3. Pick template</a>
+  <a href="#s4">4. Working style</a>
+  <a href="#s5">5. Connect GitHub</a>
+  <a href="#s6">6. Meet your team</a>
+  <div class="nav-grp">Workspace</div>
+  <a href="#s7">7. Channel view + Team tab</a>
+  <a href="#s8">8. Plan approval</a>
+  <a href="#s9">9. Hire teammate</a>
+  <a href="#s10">10. Action cap</a>
+  <a href="#s11">11. Empty state</a>
+  <div class="nav-grp">Rooms</div>
+  <a href="#s14">14. Standup room</a>
+  <a href="#s15">15. Retrospective</a>
+  <div class="nav-grp">Settings / Ops</div>
+  <a href="#s12">12. Team Rules</a>
+  <a href="#s13">13. Feasibility flag</a>
+  <div class="nav-grp">Use Case Scenarios</div>
+  <a href="#s16">16. GitHub auto-trigger</a>
+  <a href="#s17">17. Clarification request</a>
+  <a href="#s18">18. Founder override</a>
+  <a href="#s19">19. Error &amp; recovery</a>
+  <a href="#s20">20. Concurrent plans</a>
+  <a href="#s21">21. Bot-to-bot routing</a>
+  <a href="#s22">22. Scheduled task</a>
+</nav>
+
+<main class="gallery">
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 1 — Welcome
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s1">
+  <div class="screen-lbl">Screen 1 · Auth</div>
+  <div class="screen-title">Welcome / Sign Up</div>
+  <div class="screen-desc">Entry point. Magic link only — no password, no Google OAuth in v1.</div>
+  <div class="frame-wrap">
+    <div class="frame-ob" style="background:#F7F8FA;">
+      <div class="ob-card" style="text-align:center;">
+        <div style="font-size:28px;font-weight:600;letter-spacing:0.1em;color:#111827;margin-bottom:8px;">CLAN</div>
+        <div style="font-size:15px;color:#6B7280;margin-bottom:40px;">Your AI team. Ready to ship.</div>
+        <input class="ob-inp" type="email" placeholder="your@email.com" style="text-align:left;margin-bottom:12px;">
+        <button class="btn btn-p btn-full btn-lg">Send me a sign-in link</button>
+        <div style="font-size:13px;color:#9CA3AF;margin-top:12px;">No password needed.</div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    On submit → show "Check your inbox" inline (replace input + button with success message). Magic link click → Supabase Auth callback.
+    Returning user skips onboarding and goes straight to workspace.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 2 — Step 1: Name company
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s2">
+  <div class="screen-lbl">Screen 2 · Onboarding Step 1/5</div>
+  <div class="screen-title">Name your company</div>
+  <div class="screen-desc">Personalises the workspace and all bot context going forward.</div>
+  <div class="frame-wrap">
+    <div class="frame-ob">
+      <div class="ob-card">
+        <div class="prog-row">
+          <span class="dot f"></span><span class="dot"></span><span class="dot"></span>
+          <span class="dot"></span><span class="dot"></span>
+          <span class="step-lbl">Step 1 / 5</span>
+        </div>
+        <div class="ob-h">What's your company called?</div>
+        <input class="ob-inp focus" type="text" value="Bata Consultancy Services">
+        <div class="ob-s" style="margin-top:8px;">This is how your team will know who they're working for.</div>
+        <div class="ob-acts"><span></span><button class="btn btn-p">Continue →</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    Validation: non-empty, max 50 chars, error shown only after blur. No back button on step 1.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 3 — Step 2: Pick template
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s3">
+  <div class="screen-lbl">Screen 3 · Onboarding Step 2/5</div>
+  <div class="screen-title">Pick a team template</div>
+  <div class="screen-desc">Startup pre-selected. Each card shows teammates + "Works with:" tool line (Tier 1 disclosure).</div>
+  <div class="frame-wrap">
+    <div class="frame-ob">
+      <div class="ob-card" style="max-width:480px;">
+        <div class="prog-row">
+          <span class="dot f"></span><span class="dot f"></span><span class="dot"></span>
+          <span class="dot"></span><span class="dot"></span>
+          <span class="step-lbl">Step 2 / 5</span>
+        </div>
+        <div class="ob-h">Who do you want on your team?</div>
+        <div class="tpl-grid">
+          <div class="tpl-card sel">
+            <div class="tc-icon">🚀</div>
+            <div class="tc-name">Startup</div>
+            <div class="tc-roles">Product · Engineering<br>Design · Ops</div>
+            <div class="tc-count">4 teammates</div>
+            <div class="tc-pop">← Most popular</div>
+            <div class="tc-tools">Works with: GitHub</div>
+          </div>
+          <div class="tpl-card">
+            <div class="tc-icon">🏢</div>
+            <div class="tc-name">Enterprise</div>
+            <div class="tc-roles">Product · Engineering<br>Design · Security · QA · Ops</div>
+            <div class="tc-count">7 teammates</div>
+            <div class="tc-tools">Works with: GitHub · Jira</div>
+          </div>
+        </div>
+        <div class="tpl-grid" style="grid-template-columns:1fr;margin-bottom:0;">
+          <div class="tpl-card">
+            <div class="tc-icon">✦</div>
+            <div class="tc-name">Start blank</div>
+            <div class="tc-roles" style="color:#9CA3AF;">Just Ops. Hire as you need.</div>
+          </div>
+        </div>
+        <div class="ob-s" style="margin-top:12px;">You can add or remove teammates any time.</div>
+        <div class="ob-acts">
+          <span class="back">← Back</span>
+          <button class="btn btn-p">Continue →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 4 — Step 3: Working Style
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s4">
+  <div class="screen-lbl">Screen 4 · Onboarding Step 3/5</div>
+  <div class="screen-title">How do you like to work?</div>
+  <div class="screen-desc">Sets notification frequency and plan approval threshold. Balanced pre-selected.</div>
+  <div class="frame-wrap">
+    <div class="frame-ob">
+      <div class="ob-card" style="max-width:460px;">
+        <div class="prog-row">
+          <span class="dot f"></span><span class="dot f"></span><span class="dot f"></span>
+          <span class="dot"></span><span class="dot"></span>
+          <span class="step-lbl">Step 3 / 5</span>
+        </div>
+        <div class="ob-h">How do you like to work?</div>
+        <div class="ws-stack">
+          <div class="ws-card">
+            <div class="ws-chdr"><span class="ws-lbl">🤝 Hands-off</span></div>
+            <div class="ws-desc">Your team runs automatically. You'll only hear from them when something needs your decision.</div>
+          </div>
+          <div class="ws-card sel">
+            <div class="ws-chdr">
+              <span class="ws-lbl">⚖ Balanced</span>
+              <span class="rec-badge">Recommended</span>
+            </div>
+            <div class="ws-desc">Your team checks in for anything significant. Day-to-day work flows on its own.</div>
+          </div>
+          <div class="ws-card">
+            <div class="ws-chdr"><span class="ws-lbl">🔍 Hands-on</span></div>
+            <div class="ws-desc">You approve every step before your team moves forward. Full visibility, full control.</div>
+          </div>
+        </div>
+        <div style="font-size:13px;color:#9CA3AF;margin-bottom:16px;">You can change this any time in Settings.</div>
+        <div class="ob-acts">
+          <span class="back">← Back</span>
+          <button class="btn btn-p">Continue →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    Radio semantics — exactly one always selected. This setting affects plan approval frequency, notification level, and language register of all bot messages.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 5 — Step 4: Connect GitHub
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s5">
+  <div class="screen-lbl">Screen 5 · Onboarding Step 4/5</div>
+  <div class="screen-title">Connect GitHub</div>
+  <div class="screen-desc">Optional — never block on GitHub. Both states shown.</div>
+  <div class="frame-wrap" style="gap:32px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:280px;max-width:460px;">
+      <div class="state-tag tag-blue">Default</div>
+      <div class="frame-ob" style="min-height:400px;">
+        <div class="ob-card">
+          <div class="prog-row">
+            <span class="dot f"></span><span class="dot f"></span><span class="dot f"></span>
+            <span class="dot f"></span><span class="dot"></span>
+            <span class="step-lbl">Step 4 / 5</span>
+          </div>
+          <div class="ob-h">Connect your codebase</div>
+          <div class="ob-s">Your team needs GitHub access to review code, raise tasks, and spot issues automatically.</div>
+          <button class="gh-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+            Connect GitHub
+          </button>
+          <div class="or-row"><span class="or-line"></span>or<span class="or-line"></span></div>
+          <div class="skip">Skip for now (you can add this later)</div>
+          <div style="margin-top:20px;"><span class="back">← Back</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:280px;max-width:460px;">
+      <div class="state-tag tag-green">After connecting</div>
+      <div class="frame-ob" style="min-height:400px;">
+        <div class="ob-card">
+          <div class="prog-row">
+            <span class="dot f"></span><span class="dot f"></span><span class="dot f"></span>
+            <span class="dot f"></span><span class="dot"></span>
+            <span class="step-lbl">Step 4 / 5</span>
+          </div>
+          <div class="ob-h">Connect your codebase</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:16px;background:var(--success-subtle);border:1px solid rgba(5,150,105,0.2);border-radius:8px;margin-bottom:24px;">
+            <span style="color:var(--success);font-size:18px;">✓</span>
+            <span style="font-size:14px;font-weight:500;color:var(--success);">acme/backend connected</span>
+          </div>
+          <div class="ob-acts">
+            <span class="back">← Back</span>
+            <button class="btn btn-p">Continue →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    "Skip for now" is always visible and prominent. GitHub connection is never a blocker.
+    Post-connect: repo name comes from GitHub OAuth response. Sensitive area scan runs silently in background.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 6 — Step 5: Meet your team
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s6">
+  <div class="screen-lbl">Screen 6 · Onboarding Step 5/5</div>
+  <div class="screen-title">Meet your team</div>
+  <div class="screen-desc">Final step. Riley's intro is the first message seeded in #ops.</div>
+  <div class="frame-wrap">
+    <div class="frame-ob">
+      <div class="ob-card" style="max-width:480px;">
+        <div class="prog-row">
+          <span class="dot f"></span><span class="dot f"></span><span class="dot f"></span>
+          <span class="dot f"></span><span class="dot f"></span>
+          <span class="step-lbl">Step 5 / 5</span>
+        </div>
+        <div class="ob-h">Say hello to your team</div>
+        <div style="background:var(--canvas-subtle);border-radius:8px;padding:20px;margin-bottom:24px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:40px;height:40px;border-radius:9999px;overflow:hidden;flex-shrink:0;">
+              <img src="https://i.pravatar.cc/150?img=68" alt="Riley" style="width:100%;height:100%;object-fit:cover;">
+            </div>
+            <div>
+              <div style="font-weight:600;color:var(--primary);">Riley</div>
+              <div style="font-size:12px;color:#9CA3AF;">Ops · just now</div>
+            </div>
+          </div>
+          <div style="font-size:14px;color:var(--text);line-height:22px;">
+            Hey! I'm Riley, your team coordinator. Your team is ready. Here's who you've hired:<br><br>
+            <ul style="margin:0 0 0 16px;padding:0;">
+              <li style="margin-bottom:4px;"><strong>Alex</strong> — Product (#product)</li>
+              <li style="margin-bottom:4px;"><strong>Sam</strong> — Engineering (#engineering)</li>
+              <li style="margin-bottom:4px;"><strong>Jordan</strong> — Design (#design)</li>
+            </ul><br>
+            Head to any channel to start a conversation. I'll be right here in #ops if you need anything.
+          </div>
+        </div>
+        <button class="btn btn-p btn-full btn-lg">Go to my workspace</button>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    Bot names come from the founder's choices in the hire flow, not placeholders.
+    "Go to my workspace" navigates to the workspace with #ops active.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 7 — Workspace: Channel view + Team tab
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s7">
+  <div class="screen-lbl">Screen 7 · Workspace</div>
+  <div class="screen-title">Main Workspace — Channels tab + Team tab</div>
+  <div class="screen-desc">#engineering active with Sam's plan card. Sidebar shows "Channels" tab (default) and "Team" tab states side by side below.</div>
+
+  <!-- Full workspace — Channels tab active -->
+  <div class="frame-wrap" style="margin-bottom:32px;">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 12 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs">
+            <div class="sb-tab active">Channels</div>
+            <div class="sb-tab">Team</div>
+          </div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops <span class="ch-dot"></span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>engineering <span class="ch-badge">3</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>engineering
+            <span class="role-chip engineering" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Sam · Engineering</span>
+          </div>
+          <div class="thread">
+            <div class="sys-msg">⟶ New PR opened: <strong style="margin-left:4px;">"Add user auth"</strong> by @founder</div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">10:31 AM</span>
+                </div>
+                <div class="msg-text">Hey! Ready to look at the sprint. What's on your mind?</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">10:32 AM</span></div>
+                <div class="msg-text">Can you review PR #42?</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="msg-time">10:32 AM</span>
+                </div>
+                <div class="msg-text">On it. Here's what I'm planning to do:</div>
+                <div class="plan-card">
+                  <div class="plan-hdr">📋 Sam's plan</div>
+                  <div class="plan-body">Review PR #42 and leave a comment with my findings.</div>
+                  <div class="plan-btns">
+                    <button class="btn btn-p">Approve</button>
+                    <button class="btn btn-s">Not now</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Team tab state — close-up -->
+  <div class="divider">Team tab — sidebar close-up</div>
+  <div class="frame-wrap" style="gap:32px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:0 0 240px;">
+      <div class="state-tag tag-blue">Team tab active</div>
+      <div style="width:240px;background:var(--sidebar-bg);border-radius:8px;overflow:hidden;box-shadow:var(--shadow-md);">
+        <div class="ws-name">Acme Inc</div>
+        <div class="sb-tabs">
+          <div class="sb-tab">Channels</div>
+          <div class="sb-tab active">Team</div>
+        </div>
+        <div style="padding:8px 4px;">
+          <div class="tm-row active">
+            <div class="tm-avatar-wrap"><div class="tm-avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div><span class="tm-online"></span></div>
+            <div class="tm-info"><div class="tm-name">Riley</div><div class="tm-role">Ops</div></div>
+          </div>
+          <div class="tm-row">
+            <div class="tm-avatar-wrap"><div class="tm-avatar"><img src="https://i.pravatar.cc/150?img=57" alt="Alex"></div><span class="tm-online"></span></div>
+            <div class="tm-info"><div class="tm-name">Alex</div><div class="tm-role">Product</div></div>
+          </div>
+          <div class="tm-row">
+            <div class="tm-avatar-wrap"><div class="tm-avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div><span class="tm-online"></span></div>
+            <div class="tm-info"><div class="tm-name">Sam</div><div class="tm-role">Engineering</div></div>
+          </div>
+          <div class="tm-row">
+            <div class="tm-avatar-wrap"><div class="tm-avatar"><img src="https://i.pravatar.cc/150?img=47" alt="Jordan"></div><span class="tm-online idle"></span></div>
+            <div class="tm-info"><div class="tm-name">Jordan</div><div class="tm-role">Design</div></div>
+          </div>
+        </div>
+        <div class="hire-link"><span>+</span> Hire teammate</div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:280px;max-width:500px;padding-top:28px;">
+      <div style="font-size:14px;color:var(--text-soft);line-height:22px;">
+        The <strong style="color:var(--text);">Team tab</strong> shows the full teammate roster with their faces, roles, and online status.<br><br>
+        Clicking any teammate navigates to their channel — it's a visual shortcut to the same #channel-name in the Channels tab.<br><br>
+        <strong style="color:var(--text);">Online indicator:</strong>
+        <span style="display:inline-flex;align-items:center;gap:6px;margin-left:4px;">
+          <span style="width:8px;height:8px;border-radius:9999px;background:var(--success);display:inline-block;"></span> Online
+        </span>
+        &nbsp;·&nbsp;
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          <span style="width:8px;height:8px;border-radius:9999px;background:var(--warning);display:inline-block;"></span> Idle
+        </span>
+        &nbsp;·&nbsp;
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          <span style="width:8px;height:8px;border-radius:9999px;background:var(--border-strong);display:inline-block;"></span> Offline
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>Sidebar label change:</strong> "Teammates" → "Team" throughout (copy doc update needed for sidebar.section.team key).
+    <br><strong>Tab switcher:</strong> Channels (default) / Team. Both tabs are keyboard-accessible.
+    The Team tab is the primary way non-technical founders navigate — it feels like a team directory, not a channel list.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 8 — Plan Approval Modal
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s8">
+  <div class="screen-lbl">Screen 8 · Modal</div>
+  <div class="screen-title">Plan Approval Modal</div>
+  <div class="screen-desc">The trust moment. All states: open, loading, success, failure.</div>
+  <div class="frame-wrap" style="gap:32px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:1;min-width:300px;max-width:560px;">
+      <div class="state-tag tag-blue">Modal open</div>
+      <div style="background:#F0F2F5;border-radius:12px;padding:24px;box-shadow:var(--shadow-md);position:relative;">
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.48);border-radius:12px;z-index:1;"></div>
+        <div class="modal-panel" style="position:relative;z-index:2;margin:0 auto;">
+          <div class="modal-hdr">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:32px;height:32px;border-radius:9999px;overflow:hidden;flex-shrink:0;">
+                <img src="https://i.pravatar.cc/150?img=33" alt="Sam" style="width:100%;height:100%;object-fit:cover;">
+              </div>
+              <div class="modal-title">Sam is about to do something</div>
+            </div>
+            <div class="modal-close">×</div>
+          </div>
+          <div class="modal-body">
+            <div style="font-size:14px;color:#6B7280;margin-bottom:12px;">Here's exactly what will happen:</div>
+            <div class="action-box">
+              <div class="action-item"><span class="action-num">1.</span><span>Open PR #42 and read all the changed files.</span></div>
+              <div class="action-item"><span class="action-num">2.</span><span>Leave a comment on the PR with a summary of what looks good and what needs attention.</span></div>
+              <div class="action-item"><span class="action-num">3.</span><span>No code will be changed.</span></div>
+            </div>
+            <div class="action-cost">This will use <strong>1 action</strong> (12 used of 50 this month).</div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn btn-p" style="flex:1;padding:10px 20px;">Yes, go ahead</button>
+            <button class="btn btn-s" style="padding:10px 20px;">Not now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:260px;max-width:400px;display:flex;flex-direction:column;gap:16px;padding-top:28px;">
+      <div>
+        <div class="state-tag tag-blue" style="margin-bottom:8px;">Executing</div>
+        <div class="plan-card" style="background:var(--canvas-subtle);border-left-color:var(--text-muted);border-color:var(--border);">
+          <div class="plan-hdr" style="color:#6B7280;">⟳ Sam is working on it...</div>
+        </div>
+      </div>
+      <div>
+        <div class="state-tag tag-green" style="margin-bottom:8px;">Success</div>
+        <div class="plan-card success">
+          <div class="plan-hdr"><span>✓</span> Sam reviewed PR #42</div>
+          <div class="plan-body">Comment posted · just now</div>
+        </div>
+      </div>
+      <div>
+        <div class="state-tag tag-red" style="margin-bottom:8px;">Failure</div>
+        <div class="plan-card fail">
+          <div class="plan-hdr">✕ Sam couldn't complete this</div>
+          <div class="plan-body" style="font-size:13px;color:#6B7280;margin-top:4px;">GitHub returned an error. Want me to try a different approach?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>Rules:</strong> Modal is the ONLY place execution is confirmed — never auto-approve. "Not now" = zero friction, no reason asked. Close (×) = Not now.
+    If plan creates a PR, last item always says: "This will create a draft — nothing is final until you merge it."
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 9 — Hire Teammate Modal
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s9">
+  <div class="screen-lbl">Screen 9 · Modal</div>
+  <div class="screen-title">Hire Teammate Modal — Two-step candidate flow</div>
+  <div class="screen-desc">Step 1: choose a role. Step 2: browse pre-defined candidates with faces. No free-text name entry.</div>
+
+  <style>
+    /* Candidate card */
+    .cand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+    .cand-card {
+      border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+      cursor: pointer; transition: border-color 80ms; background: #fff;
+    }
+    .cand-card:hover { border-color: var(--primary); }
+    .cand-card.sel   { border: 2px solid var(--primary); background: var(--primary-subtle); }
+    .cand-photo {
+      width: 100%; height: 100px; overflow: hidden; position: relative;
+    }
+    .cand-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+    .cand-check {
+      position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+      background: var(--primary); border-radius: 9999px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 13px; font-weight: 700;
+    }
+    .cand-info { padding: 10px 12px 12px; }
+    .cand-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+    .cand-tagline { font-size: 12px; color: var(--text-soft); line-height: 16px; margin-bottom: 8px; }
+    .cand-pill {
+      display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+      padding: 2px 8px; border-radius: 9999px; background: var(--canvas-subtle);
+      border: 1px solid var(--border); color: var(--text-muted); text-transform: uppercase;
+    }
+    .cand-card.sel .cand-pill { background: var(--primary-subtle); border-color: rgba(79,70,229,0.2); color: var(--primary); }
+    .back-role { font-size: 13px; color: var(--primary); cursor: pointer; margin-bottom: 16px;
+                 display: flex; align-items: center; gap: 4px; }
+  </style>
+
+  <div class="frame-wrap" style="gap:32px;flex-wrap:wrap;align-items:flex-start;">
+
+    <!-- Step 1: Role selection -->
+    <div style="flex:1;min-width:280px;max-width:500px;">
+      <div class="state-tag tag-blue">Step 1 — Choose a role</div>
+      <div class="modal-panel" style="box-shadow:var(--shadow-lg);margin:0 auto;">
+        <div class="modal-hdr">
+          <div class="modal-title">Add a teammate</div>
+          <div class="modal-close">×</div>
+        </div>
+        <div class="modal-body">
+          <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:12px;">What kind of help do you need?</div>
+          <div class="role-grid">
+            <div class="role-card"><div class="rc-name">Product</div><div class="rc-desc">Shapes what to build next</div></div>
+            <div class="role-card">
+              <div class="rc-name">Engineering</div><div class="rc-desc">Reviews code, raises PRs</div>
+              <div class="rc-hired">✓ On your team</div>
+            </div>
+            <div class="role-card"><div class="rc-name">Design</div><div class="rc-desc">Wireframes and copy</div></div>
+            <div class="role-card"><div class="rc-name">Security</div><div class="rc-desc">Spots risks before they ship</div></div>
+            <div class="role-card"><div class="rc-name">QA</div><div class="rc-desc">Finds bugs before users do</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Candidate selection (Engineering shown) -->
+    <div style="flex:1;min-width:300px;max-width:560px;">
+      <div class="state-tag tag-blue">Step 2 — Kai Rivera selected</div>
+      <div class="modal-panel hire-modal" style="box-shadow:var(--shadow-lg);margin:0 auto;">
+        <div class="modal-hdr">
+          <div class="modal-title">Add a teammate</div>
+          <div class="modal-close">×</div>
+        </div>
+        <div class="modal-body">
+          <div class="back-role">← Engineering</div>
+          <div style="font-size:18px;font-weight:600;color:var(--text);margin-bottom:4px;">Meet your Engineering candidates</div>
+          <div style="font-size:13px;color:var(--text-soft);margin-bottom:4px;">These are the specialists available to join your team.</div>
+
+          <div class="cand-grid">
+            <!-- Sam Chen -->
+            <div class="cand-card">
+              <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=15" alt="Sam Chen"></div>
+              <div class="cand-info">
+                <div class="cand-name">Sam Chen</div>
+                <div class="cand-tagline">Thorough code reviewer. Catches edge cases before they ship.</div>
+                <span class="cand-pill">Methodical</span>
+              </div>
+            </div>
+            <!-- Kai Rivera — selected -->
+            <div class="cand-card sel">
+              <div class="cand-photo">
+                <img src="https://i.pravatar.cc/150?img=22" alt="Kai Rivera">
+                <div class="cand-check">✓</div>
+              </div>
+              <div class="cand-info">
+                <div class="cand-name">Kai Rivera</div>
+                <div class="cand-tagline">Fast-moving. Ships first, tightens after.</div>
+                <span class="cand-pill">Moves fast</span>
+              </div>
+            </div>
+            <!-- Alex Morgan -->
+            <div class="cand-card">
+              <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=36" alt="Alex Morgan"></div>
+              <div class="cand-info">
+                <div class="cand-name">Alex Morgan</div>
+                <div class="cand-tagline">Security-conscious. Never merges without a second pass.</div>
+                <span class="cand-pill">Security-first</span>
+              </div>
+            </div>
+            <!-- Jordan Lee -->
+            <div class="cand-card">
+              <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=44" alt="Jordan Lee"></div>
+              <div class="cand-info">
+                <div class="cand-name">Jordan Lee</div>
+                <div class="cand-tagline">Test-driven. If it's not covered, it doesn't count.</div>
+                <span class="cand-pill">TDD advocate</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tool disclosure (shown after candidate selected) -->
+          <div class="tool-section">
+            <div class="tool-lbl">What Kai needs to work:</div>
+            <div class="tool-row"><span class="tdot ok"></span><span>GitHub</span><span class="tool-ok">Ready</span></div>
+            <div class="tool-row"><span class="tdot off"></span><span>Jira</span><span class="tool-link">Connect in Settings →</span></div>
+            <div class="tool-note">Kai works without these — connected tools just unlock more of what they can do.</div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-p btn-full" style="padding:12px 20px;font-size:15px;">Hire Kai Rivera</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other role candidate pools reference -->
+  <div class="divider" style="margin-top:40px;">Other role pools — candidate cards</div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:20px;justify-content:center;">
+
+    <!-- Product pool -->
+    <div style="flex:0 0 auto;">
+      <div class="state-tag tag-blue" style="margin-bottom:8px;">Product (4 candidates)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:340px;">
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=5" alt="Riley Park"></div>
+          <div class="cand-info"><div class="cand-name">Riley Park</div><div class="cand-tagline">Data-driven. Always asks what the numbers say.</div><span class="cand-pill">Research-led</span></div>
+        </div>
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=18" alt="Taylor Kim"></div>
+          <div class="cand-info"><div class="cand-name">Taylor Kim</div><div class="cand-tagline">Intuition-led. Moves fast and adjusts.</div><span class="cand-pill">Fast mover</span></div>
+        </div>
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=29" alt="Drew Walsh"></div>
+          <div class="cand-info"><div class="cand-name">Drew Walsh</div><div class="cand-tagline">Systems thinker. Sees second-order effects.</div><span class="cand-pill">Big picture</span></div>
+        </div>
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=51" alt="Quinn Chen"></div>
+          <div class="cand-info"><div class="cand-name">Quinn Chen</div><div class="cand-tagline">Customer-obsessed. Every decision starts with the user.</div><span class="cand-pill">Customer-first</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Design pool -->
+    <div style="flex:0 0 auto;">
+      <div class="state-tag tag-blue" style="margin-bottom:8px;">Design (4 candidates)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:340px;">
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=10" alt="Jordan Blake"></div>
+          <div class="cand-info"><div class="cand-name">Jordan Blake</div><div class="cand-tagline">Clean and minimal. Typography first.</div><span class="cand-pill">Minimalist</span></div>
+        </div>
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=34" alt="Casey Rivera"></div>
+          <div class="cand-info"><div class="cand-name">Casey Rivera</div><div class="cand-tagline">User flows before visuals. Usability above aesthetics.</div><span class="cand-pill">UX-first</span></div>
+        </div>
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=48" alt="Avery Singh"></div>
+          <div class="cand-info"><div class="cand-name">Avery Singh</div><div class="cand-tagline">Bold and expressive. Takes creative risks.</div><span class="cand-pill">Creative</span></div>
+        </div>
+        <div class="cand-card">
+          <div class="cand-photo"><img src="https://i.pravatar.cc/150?img=62" alt="Morgan Lee"></div>
+          <div class="cand-info"><div class="cand-name">Morgan Lee</div><div class="cand-tagline">Systematic. Design tokens, components, docs.</div><span class="cand-pill">Systems</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>Decision 024:</strong> Free-text name input removed entirely. Founders choose from a pre-defined roster of 4 candidates per role — like reviewing job applicants.
+    <ul>
+      <li>Pool is shuffled on every modal open — prevents seeing the same face first each time</li>
+      <li>Candidate's name becomes the bot's name in all channels, messages, and plan cards</li>
+      <li>Tool disclosure appears after candidate is tapped (not after role selection)</li>
+      <li>Already-hired candidates show "On your team" badge and are non-interactive</li>
+      <li>Personality badge is cosmetic in v1 — behaviour differentiation is v1.1 scope</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 10 — Action Cap Warning
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s10">
+  <div class="screen-lbl">Screen 10 · Inline warning</div>
+  <div class="screen-title">Action Cap Warning</div>
+  <div class="screen-desc">Warning at 80%+ and cap hit. Input is NEVER fully disabled — questions always allowed.</div>
+  <div class="frame-wrap" style="gap:32px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:1;min-width:280px;max-width:500px;">
+      <div class="state-tag tag-blue">Warning — 84% used</div>
+      <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-md);">
+        <div class="cap-banner warn">
+          <div class="banner-row"><span>⚠</span><span>Your team is running low — 42 of 50 actions used.</span></div>
+          <div>They can still answer questions, but won't be able to take actions in GitHub once you hit 50.</div>
+          <div><span class="banner-link" style="color:var(--warning);">Manage limit</span></div>
+        </div>
+        <div class="input-area" style="border-top:none;">
+          <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:280px;max-width:500px;">
+      <div class="state-tag tag-red">Cap hit — 50/50 used</div>
+      <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-md);">
+        <div class="cap-banner cap">
+          <div class="banner-row"><span>🔒</span><span>Your team has used all 50 actions.</span></div>
+          <div>They can still answer questions, but can't take any GitHub actions until you reset.</div>
+          <div><span class="banner-link" style="color:var(--error);">Reset limit</span></div>
+        </div>
+        <div class="input-area" style="border-top:none;">
+          <textarea class="msg-input locked" rows="1" placeholder="Ask a question (actions are paused — reset to unlock)"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 11 — Empty State
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s11">
+  <div class="screen-lbl">Screen 11 · Empty state</div>
+  <div class="screen-title">New Channel — Empty State</div>
+  <div class="screen-desc">Bot intro message IS the empty state. No illustrations or "no messages yet" placeholder.</div>
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span><span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 12 / 50 actions used</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>security</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header"><span class="hash">#</span>security</div>
+          <div class="thread">
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=14" alt="Morgan"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Morgan</span>
+                  <span class="role-chip security">Security</span>
+                  <span class="msg-time">Just now</span>
+                </div>
+                <div class="msg-text">Hey, I'm Morgan — your security teammate.<br><br>
+                  I watch for risks in your codebase before they become problems.<br><br>
+                  You can ask me to review a PR, check for vulnerabilities, or just ask questions about keeping your product safe.<br><br>
+                  What are you worried about?</div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Morgan..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 14 — Standup Room
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s14">
+  <div class="screen-lbl">Screen 14 · Room</div>
+  <div class="screen-title">#standup — Daily Standup Room</div>
+  <div class="screen-desc">Vercel Cron fires at 9 AM. Each bot posts Yesterday / Today / Blockers. Founder can reply to any bot in thread.</div>
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span><span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 14 / 50 actions used</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>standup
+            <span style="font-size:13px;color:var(--text-muted);font-weight:400;margin-left:8px;">Daily · 9:00 AM</span>
+          </div>
+          <div class="thread">
+            <!-- System trigger message -->
+            <div class="sys-msg" style="margin-bottom:8px;">
+              📅 Daily standup · Today at 9:00 AM · Automated
+            </div>
+
+            <!-- Riley opens -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Riley</span>
+                  <span class="role-chip ops">Ops</span>
+                  <span class="msg-time">9:00 AM</span>
+                </div>
+                <div class="msg-text">Good morning! Here's your team's standup for today.</div>
+              </div>
+            </div>
+
+            <!-- Alex standup -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=57" alt="Alex"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Alex</span>
+                  <span class="role-chip product">Product</span>
+                  <span class="msg-time">9:00 AM</span>
+                </div>
+                <div class="standup-msg">
+                  <div class="su-section">
+                    <div class="su-label">Yesterday</div>
+                    <div class="su-content">Finalised the use cases for the onboarding flow and shared them with Jordan for design review.</div>
+                  </div>
+                  <div class="su-section" style="margin-top:10px;">
+                    <div class="su-label">Today</div>
+                    <div class="su-content">Writing use cases for the standup and retrospective rooms. Will review open questions with you if you have 10 minutes.</div>
+                  </div>
+                  <div class="su-section" style="margin-top:10px;">
+                    <div class="su-label">Blockers</div>
+                    <div class="su-none">None</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sam standup -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">9:01 AM</span>
+                </div>
+                <div class="standup-msg">
+                  <div class="su-section">
+                    <div class="su-label">Yesterday</div>
+                    <div class="su-content">Reviewed PR #41 (auth middleware). Left 3 comments — one blocking, two suggestions. PR is back with you.</div>
+                  </div>
+                  <div class="su-section" style="margin-top:10px;">
+                    <div class="su-label">Today</div>
+                    <div class="su-content">Reviewing PR #42 once approved. Planning to set up the GitHub webhook handler for the sprint trigger.</div>
+                  </div>
+                  <div class="su-section" style="margin-top:10px;">
+                    <div class="su-label">Blockers</div>
+                    <div class="su-content" style="color:var(--warning);">Waiting on your approval for PR #42 plan — posted in #engineering.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Jordan standup -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=47" alt="Jordan"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Jordan</span>
+                  <span class="role-chip design">Design</span>
+                  <span class="msg-time">9:01 AM</span>
+                </div>
+                <div class="standup-msg">
+                  <div class="su-section">
+                    <div class="su-label">Yesterday</div>
+                    <div class="su-content">Updated the wireframes with the 5-step onboarding flow. Working style screen is done. Hire modal tool disclosure added.</div>
+                  </div>
+                  <div class="su-section" style="margin-top:10px;">
+                    <div class="su-label">Today</div>
+                    <div class="su-content">Finishing the Settings → Team Rules wireframe and the feasibility escalation card spec.</div>
+                  </div>
+                  <div class="su-section" style="margin-top:10px;">
+                    <div class="su-label">Blockers</div>
+                    <div class="su-none">None</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Founder reply -->
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">9:05 AM</span></div>
+                <div class="msg-text">Sam, approving the PR #42 plan now — go ahead.</div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Reply to the standup..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>Trigger:</strong> Vercel Cron at 9 AM daily → POST /api/bots/standup → each bot reads its recent activity from the GitHub + conversation log and posts.
+    <br><strong>Format per bot:</strong> Yesterday / Today / Blockers — plain English, no jargon.
+    <br><strong>Blocker callout:</strong> If a bot is blocked by the founder (e.g. waiting on approval), it calls that out in amber text.
+    <br>Founder can reply in the standup thread to any bot — replies route to that bot's channel.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 15 — Retrospective Room
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s15">
+  <div class="screen-lbl">Screen 15 · Room</div>
+  <div class="screen-title">#retrospective — Weekly Retrospective</div>
+  <div class="screen-desc">Scheduled (or founder-triggered). Each bot reflects on the past sprint. Structured: Went Well / Could Be Better / One Thing to Try.</div>
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span><span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 14 / 50 actions used</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>retrospective
+            <span style="font-size:13px;color:var(--text-muted);font-weight:400;margin-left:8px;">Sprint 1 · Week of Apr 21</span>
+          </div>
+          <div class="thread">
+            <div class="sys-msg" style="margin-bottom:8px;">
+              🔁 Sprint 1 retrospective · Started by Riley · Friday 5:00 PM
+            </div>
+
+            <!-- Riley opens the retro -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Riley</span>
+                  <span class="role-chip ops">Ops</span>
+                  <span class="msg-time">5:00 PM</span>
+                </div>
+                <div class="msg-text">Wrapping up Sprint 1. Here's what the team has to say — then it's over to you for any thoughts.</div>
+              </div>
+            </div>
+
+            <!-- Sam retro -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">5:00 PM</span>
+                </div>
+                <div class="retro-card">
+                  <div class="retro-section">
+                    <div class="retro-label went">✓ Went well</div>
+                    <div class="retro-content">PR review flow is solid. The plan card → approval modal reduces back-and-forth significantly. Reviewed 4 PRs this sprint without a single misunderstanding.</div>
+                  </div>
+                  <div class="retro-section">
+                    <div class="retro-label better">△ Could be better</div>
+                    <div class="retro-content">I had to wait 6 hours for PR #41 approval. When you're away, pending plans sit idle. Async notifications might help.</div>
+                  </div>
+                  <div class="retro-section">
+                    <div class="retro-label try">→ One thing to try</div>
+                    <div class="retro-content">Set a default "if no response in X hours, skip to next task" rule for lower-risk plans — could unblock me when you're busy.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alex retro -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=57" alt="Alex"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Alex</span>
+                  <span class="role-chip product">Product</span>
+                  <span class="msg-time">5:01 PM</span>
+                </div>
+                <div class="retro-card">
+                  <div class="retro-section">
+                    <div class="retro-label went">✓ Went well</div>
+                    <div class="retro-content">Use case coverage is comprehensive. Having them written before design started prevented two scope debates we'd have had otherwise.</div>
+                  </div>
+                  <div class="retro-section">
+                    <div class="retro-label better">△ Could be better</div>
+                    <div class="retro-content">Some use cases needed 2–3 revisions after Jordan saw them. Earlier design input on the UC drafts would save revision cycles.</div>
+                  </div>
+                  <div class="retro-section">
+                    <div class="retro-label try">→ One thing to try</div>
+                    <div class="retro-content">Loop Jordan in on use case drafts for any screen-heavy features before they're finalised.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Riley wraps up -->
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Riley</span>
+                  <span class="role-chip ops">Ops</span>
+                  <span class="msg-time">5:03 PM</span>
+                </div>
+                <div class="msg-text">
+                  That's the team's view. Any thoughts or anything you'd like us to change going into Sprint 2?<br><br>
+                  <span style="color:var(--text-soft);font-size:14px;">Sam's suggestion about async approval timeouts is worth considering — I can set that up if you want. Just say the word.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Share your thoughts on the sprint..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>Trigger:</strong> Vercel Cron (Friday 5 PM by default) or founder types "let's do a retro" in #retrospective.
+    <br><strong>Format per bot:</strong> Went Well / Could Be Better / One Thing to Try — anchored to actual sprint activity, not generic.
+    <br><strong>Riley's wrap-up</strong> surfaces any cross-team patterns or action items for the founder. This is the only automated synthesis across all teammates.
+    <br>Founder reply → routes to the specific bot mentioned or to Riley if general.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 12 — Settings: Team Rules
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s12">
+  <div class="screen-lbl">Screen 12 · Settings</div>
+  <div class="screen-title">Settings — Team Rules</div>
+  <div class="screen-desc">Locked rules always on. Adjustable rules use toggles. One custom rule allowed.</div>
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span><span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 12 / 50 actions used</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="settings-area">
+          <div class="s-h">Settings</div>
+          <div class="stabs">
+            <div class="stab">Integrations</div>
+            <div class="stab">Working Style</div>
+            <div class="stab active">Team Rules</div>
+          </div>
+          <div style="max-width:600px;">
+            <div class="s-sub">Rules your team follows. Locked rules keep your team working safely — adjustable rules are yours to configure.</div>
+            <div class="rules-card locked">
+              <div class="rc-hdr"><span>🔒</span><span class="rc-title">Rules your team always follows</span></div>
+              <div class="rc-sub">These are locked — they protect how your team works.</div>
+              <div class="lock-row"><div class="lock-chk">✓</div><div class="lock-lbl">Every feature starts with documented use cases</div></div>
+              <div class="lock-row"><div class="lock-chk">✓</div><div class="lock-lbl">QA signs off before anything ships</div></div>
+              <div class="lock-row"><div class="lock-chk">✓</div><div class="lock-lbl">Tests required on every change</div></div>
+              <div class="lock-row"><div class="lock-chk">✓</div><div class="lock-lbl">Automated checks must pass before merging</div></div>
+              <div class="lock-row"><div class="lock-chk">✓</div><div class="lock-lbl">Test coverage can never decrease</div></div>
+              <div class="lock-row"><div class="lock-chk">✓</div><div class="lock-lbl">Deployment pipeline set up before first feature ships</div></div>
+            </div>
+            <div class="rules-card">
+              <div class="rc-title" style="margin-bottom:4px;">Rules you can adjust</div>
+              <div class="cat-lbl">Code quality</div>
+              <div class="tgl-row"><span>No direct pushes to main</span><div class="toggle on"><div class="tthumb"></div></div></div>
+              <div class="tgl-row"><span>Require code review approval</span><div class="toggle on"><div class="tthumb"></div></div></div>
+              <div class="tgl-row"><span>Require two reviewers</span><div class="toggle off"><div class="tthumb"></div></div></div>
+              <div class="cat-lbl">Communication</div>
+              <div class="tgl-row"><span>Daily standup updates</span><div class="toggle on"><div class="tthumb"></div></div></div>
+              <div class="tgl-row"><span>Weekly retrospective</span><div class="toggle off"><div class="tthumb"></div></div></div>
+              <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px;">
+                <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:6px;">Add a custom rule (optional)</div>
+                <div style="display:flex;gap:8px;align-items:flex-end;">
+                  <input style="flex:1;padding:9px 14px;border:1px solid var(--border-strong);border-radius:6px;font-size:13px;font-family:'Inter',sans-serif;color:var(--text-muted);outline:none;" placeholder="e.g. Always write a summary comment on every PR">
+                  <button class="btn btn-p" style="opacity:0.5;cursor:not-allowed;flex-shrink:0;padding:9px 16px;font-size:13px;">Save</button>
+                </div>
+                <div style="font-size:12px;color:#9CA3AF;margin-top:4px;">140 characters max. One rule per workspace.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    Locked rule checkboxes: always checked, opacity 0.5, cursor not-allowed. Tooltip on hover: "This rule can't be changed — it protects how your team works."
+    Toggle saves immediately (debounced 300ms PATCH). Custom rule Save button disabled until input is non-empty and changed.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 13 — Feasibility Escalation
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s13">
+  <div class="screen-lbl">Screen 13 · Ops channel</div>
+  <div class="screen-title">Feasibility Review Escalation</div>
+  <div class="screen-desc">Major flag raised during feasibility review. Riley surfaces it in #ops. All three severity variants shown below.</div>
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span><span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 12 / 50 actions used</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>ops <span class="ch-badge">1</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header"><span class="hash">#</span>ops</div>
+          <div class="thread">
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Riley</span>
+                  <span class="role-chip ops">Ops</span>
+                  <span class="msg-time">9:00 AM</span>
+                </div>
+                <div class="msg-text">Good news — design sorted a small issue before it reached you.</div>
+                <div class="flag-card minor">
+                  <div class="flag-hdr ok"><span>✓</span> Design sorted it</div>
+                  <div style="font-size:13px;color:#6B7280;">Missing onboarding screen added · no action needed</div>
+                </div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Riley</span>
+                  <span class="msg-time">9:02 AM</span>
+                </div>
+                <div class="msg-text">Before we start building, your design team flagged something that needs your call.</div>
+                <div class="flag-card major">
+                  <div class="flag-hdr">⚠ Design needs your input</div>
+                  <div class="flag-sum">The hire modal doesn't show which tools each role needs. Founders won't know what to connect before hiring.</div>
+                  <ul class="flag-opts">
+                    <li>Add tool disclosure to the hire modal (recommended)</li>
+                    <li>Remove tool requirements from onboarding — founders connect tools later via Ops</li>
+                  </ul>
+                  <div class="flag-btns">
+                    <button class="btn btn-p" style="font-size:13px;padding:7px 14px;">Fix it</button>
+                    <button class="btn btn-s" style="font-size:13px;padding:7px 14px;">Skip this step</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Riley..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">All three severity variants</div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px;">
+    <div style="flex:1;min-width:200px;">
+      <div class="state-tag tag-green" style="margin-bottom:8px;">Minor — auto-resolved</div>
+      <div class="flag-card minor"><div class="flag-hdr ok"><span>✓</span> Design sorted it</div><div style="font-size:13px;color:#6B7280;margin-top:4px;">No action needed.</div></div>
+    </div>
+    <div style="flex:1;min-width:200px;">
+      <div class="state-tag tag-blue" style="margin-bottom:8px;">Major — needs your call</div>
+      <div class="flag-card major">
+        <div class="flag-hdr">⚠ Design needs your input</div>
+        <div style="font-size:13px;color:var(--text);margin-top:4px;">[Plain-English description]</div>
+        <div class="flag-btns" style="margin-top:12px;">
+          <button class="btn btn-p" style="font-size:13px;padding:7px 14px;">Fix it</button>
+          <button class="btn btn-s" style="font-size:13px;padding:7px 14px;">Skip</button>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:200px;">
+      <div class="state-tag tag-red" style="margin-bottom:8px;">Blocker — build cannot start</div>
+      <div class="flag-card block">
+        <div class="flag-hdr" style="color:var(--error);">🛑 This needs to be fixed before we can start</div>
+        <div style="font-size:13px;color:#6B7280;margin-top:4px;">[No skip option]</div>
+        <div class="flag-btns" style="margin-top:12px;">
+          <button class="btn btn-p btn-full" style="font-size:13px;padding:7px 14px;">Let's fix this</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    Working style affects how Riley phrases the escalation: Hands-off = terse summary · Balanced = context + options · Hands-on = full detail with background.
+    "Skip this step" shows an inline micro-confirm (not a modal) before acting.
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 16 — GitHub Auto-Trigger (Cat 4)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s16">
+  <div class="screen-lbl">Screen 16 · Use Case Cat 4</div>
+  <div class="screen-title">GitHub Auto-Trigger</div>
+  <div class="screen-desc">A PR is opened on GitHub. Sam gets the event automatically — no founder message needed. Plan card appears unprompted.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 14 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>engineering <span class="ch-badge">1</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>engineering
+            <span class="role-chip engineering" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Sam · Engineering</span>
+          </div>
+          <div class="thread">
+            <div class="sys-msg">⟶ PR #58 opened on GitHub: <strong>"Add payment integration"</strong> by @founder · <span style="color:var(--primary);cursor:pointer;">View PR ↗</span></div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">2:14 PM</span>
+                </div>
+                <div class="msg-text">I saw a new PR just came in — I'll review it now and share my findings.</div>
+                <div class="plan-card">
+                  <div class="plan-hdr">📋 Sam's plan</div>
+                  <div class="plan-body">Review PR #58 "Add payment integration": check code quality, security, test coverage, and leave a comment summary on GitHub.</div>
+                  <div class="plan-btns">
+                    <button class="btn btn-p">Approve</button>
+                    <button class="btn btn-s">Not now</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>No founder message required.</strong> The GitHub event surfaces directly in the channel as a system message, then Sam proposes a plan automatically. The founder only needs to approve or dismiss — zero typing required. This is the core "zero-config GitHub integration" differentiator.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 17 — Clarification Request (Cat 2)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s17">
+  <div class="screen-lbl">Screen 17 · Use Case Cat 2</div>
+  <div class="screen-title">Clarification Request</div>
+  <div class="screen-desc">Founder sends a vague message. Alex asks a single focused question — never a form, never multiple questions at once.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 9 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>product <span class="ch-badge">1</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>product
+            <span class="role-chip product" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Alex · Product</span>
+          </div>
+          <div class="thread">
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">11:03 AM</span></div>
+                <div class="msg-text">We need to make the product better.</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=57" alt="Alex"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Alex</span>
+                  <span class="role-chip product">Product</span>
+                  <span class="msg-time">11:03 AM</span>
+                </div>
+                <div class="msg-text">Happy to dig in! To point us in the right direction — is there a specific part of the product that's frustrating you, or is this more about reaching new customers?</div>
+                <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                  <button class="btn btn-s" style="font-size:13px;padding:6px 14px;">Something's frustrating me</button>
+                  <button class="btn btn-s" style="font-size:13px;padding:6px 14px;">Reaching new customers</button>
+                  <button class="btn btn-s" style="font-size:13px;padding:6px 14px;">Something else</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Alex..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>One question, never a form.</strong> Alex offers quick-reply chips to reduce typing friction. The chips are shortcuts — the founder can always type a free-form reply instead. Alex never asks two questions in the same message.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 18 — Founder Override / Disagree (Cat 7)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s18">
+  <div class="screen-lbl">Screen 18 · Use Case Cat 7</div>
+  <div class="screen-title">Founder Override</div>
+  <div class="screen-desc">Sam flags a concern about the founder's approach but the founder overrides. Sam proceeds without friction.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 18 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>engineering</div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>engineering
+            <span class="role-chip engineering" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Sam · Engineering</span>
+          </div>
+          <div class="thread">
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">3:40 PM</span></div>
+                <div class="msg-text">Skip the tests for now, just ship the feature.</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">3:40 PM</span>
+                </div>
+                <div class="msg-text">Heads up — skipping tests here could cause issues down the line if we build on top of this. That said, it's your call.</div>
+                <div style="display:flex;gap:8px;margin-top:10px;">
+                  <button class="btn btn-p" style="font-size:13px;padding:6px 14px;">Got it, proceed anyway</button>
+                  <button class="btn btn-s" style="font-size:13px;padding:6px 14px;">Add basic tests</button>
+                </div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">3:41 PM</span></div>
+                <div class="msg-text" style="display:inline-flex;align-items:center;gap:6px;"><span>Got it, proceed anyway</span></div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">3:41 PM</span>
+                </div>
+                <div class="msg-text">Understood — shipping without tests. Here's my plan:</div>
+                <div class="plan-card">
+                  <div class="plan-hdr">📋 Sam's plan</div>
+                  <div class="plan-body">Implement the checkout flow feature and open a PR. No test suite included this iteration.</div>
+                  <div class="plan-btns">
+                    <button class="btn btn-p">Approve</button>
+                    <button class="btn btn-s">Not now</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>One flag, then deference.</strong> Sam raises the concern once, clearly, without jargon. The override buttons are equal weight — no dark pattern that makes "skip tests" harder to click. Once the founder decides, Sam doesn't repeat the concern.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 19 — Error & Recovery (Cat 11)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s19">
+  <div class="screen-lbl">Screen 19 · Use Case Cat 11</div>
+  <div class="screen-title">Error &amp; Recovery</div>
+  <div class="screen-desc">Sam hits an error mid-task. She surfaces it in plain English with a clear recovery path — no stack traces, no jargon.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 21 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>engineering <span class="ch-badge">1</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>engineering
+            <span class="role-chip engineering" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Sam · Engineering</span>
+          </div>
+          <div class="thread">
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">4:02 PM</span></div>
+                <div class="msg-text">Can you push the latest changes to GitHub?</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">4:02 PM</span>
+                </div>
+                <div class="msg-text">On it!</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">4:04 PM</span>
+                </div>
+                <div class="plan-card fail">
+                  <div class="plan-hdr">⚠ Ran into a problem</div>
+                  <div class="plan-body" style="color:var(--text-soft);font-size:13px;margin-top:4px;">I couldn't connect to your GitHub repository. It looks like my access was removed or the repository was renamed.</div>
+                  <div style="margin-top:12px;padding:10px 12px;background:var(--error-subtle);border-radius:6px;font-size:13px;color:var(--error);">
+                    <strong>What to check:</strong> Go to GitHub → Settings → Integrations and make sure Clan still has access to this repo.
+                  </div>
+                  <div class="plan-btns" style="margin-top:12px;">
+                    <button class="btn btn-p" style="font-size:13px;">Try again</button>
+                    <button class="btn btn-s" style="font-size:13px;">Fix GitHub access</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>No stack traces, no error codes.</strong> Error card uses the same plan-card container but with the <code>fail</code> variant. Recovery action is specific and actionable. "Fix GitHub access" deep-links to GitHub settings — not to Clan settings.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 20 — Concurrent Active Plans (Cat 15)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s20">
+  <div class="screen-lbl">Screen 20 · Use Case Cat 15</div>
+  <div class="screen-title">Concurrent Active Plans</div>
+  <div class="screen-desc">Two plan approvals are waiting in #engineering at the same time. Founder can approve or dismiss each independently.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 30 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>engineering <span class="ch-badge">2</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>engineering
+            <span class="role-chip engineering" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Sam · Engineering</span>
+          </div>
+          <div class="thread">
+            <div class="sys-msg">⟶ PR #61 opened: <strong>"Database migrations"</strong></div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">9:11 AM</span>
+                </div>
+                <div class="msg-text">Two things landed at once — I'll tackle them in order once you approve.</div>
+                <div class="plan-card">
+                  <div class="plan-hdr">📋 Plan 1 of 2 — Review PR #61</div>
+                  <div class="plan-body">Check the database migration PR for safety and correctness. Leave a comment summary on GitHub.</div>
+                  <div class="plan-btns">
+                    <button class="btn btn-p">Approve</button>
+                    <button class="btn btn-s">Not now</button>
+                  </div>
+                </div>
+                <div class="plan-card" style="margin-top:12px;">
+                  <div class="plan-hdr">📋 Plan 2 of 2 — Fix login bug</div>
+                  <div class="plan-body">Investigate the login timeout bug reported in #ops and open a fix PR.</div>
+                  <div class="plan-btns">
+                    <button class="btn btn-p">Approve</button>
+                    <button class="btn btn-s">Not now</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>"Plan N of N" label</strong> makes queue position explicit — founder always knows how many approvals are waiting. Plans execute sequentially after approval; the second plan card doesn't disappear until Plan 1 starts. Badge count (2) on the sidebar matches the number of pending approvals.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 21 — Bot-to-Bot Routing (Cat 18)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s21">
+  <div class="screen-lbl">Screen 21 · Use Case Cat 18</div>
+  <div class="screen-title">Bot-to-Bot Routing via Riley</div>
+  <div class="screen-desc">Founder messages #ops with a mixed request. Riley identifies the right teammates and routes the work — founder sees a single summary, not a wall of cross-talk.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 11 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product <span class="ch-dot"></span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>engineering <span class="ch-dot"></span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>ops
+            <span class="role-chip ops" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Riley · Ops</span>
+          </div>
+          <div class="thread">
+            <div class="msg-row">
+              <div class="avatar you">A</div>
+              <div class="msg-body">
+                <div class="msg-meta"><span class="msg-author">You</span><span class="msg-time">1:55 PM</span></div>
+                <div class="msg-text">We need a new landing page design and the backend API for it. Can the team sort this out?</div>
+              </div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=68" alt="Riley"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Riley</span>
+                  <span class="role-chip ops">Ops</span>
+                  <span class="msg-time">1:55 PM</span>
+                </div>
+                <div class="msg-text">On it! I've split this across the right people:</div>
+                <div style="margin-top:10px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                  <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);">
+                    <img src="https://i.pravatar.cc/150?img=47" style="width:28px;height:28px;border-radius:9999px;" alt="Jordan">
+                    <div>
+                      <div style="font-size:13px;font-weight:600;">Jordan <span class="role-chip design" style="font-size:11px;padding:1px 6px;border-radius:9999px;margin-left:4px;">Design</span></div>
+                      <div style="font-size:12px;color:var(--text-soft);">Landing page design — working on it in #design</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;">
+                    <img src="https://i.pravatar.cc/150?img=33" style="width:28px;height:28px;border-radius:9999px;" alt="Sam">
+                    <div>
+                      <div style="font-size:13px;font-weight:600;">Sam <span class="role-chip engineering" style="font-size:11px;padding:1px 6px;border-radius:9999px;margin-left:4px;">Engineering</span></div>
+                      <div style="font-size:12px;color:var(--text-soft);">Landing page API — working on it in #engineering</div>
+                    </div>
+                  </div>
+                </div>
+                <div style="margin-top:10px;font-size:13px;color:var(--text-soft);">I'll let you know when both are ready for your review.</div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Riley..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>Riley is the coordination layer.</strong> The founder never needs to know which channel to go to — they ask in #ops and Riley dispatches. Each routed task creates a plan card in the target channel (not shown here). Unread dots appear on #product and #engineering to surface the new activity.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN 22 — Scheduled / Async Task (Cat 10)
+════════════════════════════════════════════════════════════════════ -->
+<section class="screen-section" id="s22">
+  <div class="screen-lbl">Screen 22 · Use Case Cat 10</div>
+  <div class="screen-title">Scheduled Task</div>
+  <div class="screen-desc">Sam surfaces a scheduled Monday check-in without the founder prompting it. The founder can snooze, approve, or dismiss.</div>
+
+  <div class="frame-wrap">
+    <div class="frame-app">
+      <div class="top-bar">
+        <span class="brand">CLAN</span><span class="vsep"></span>
+        <span class="wname">Acme Inc</span>
+        <div class="actions"><span class="ac">⚡ 6 / 50 actions used</span><span style="color:var(--sidebar-text);opacity:0.6;cursor:pointer;">?</span></div>
+      </div>
+      <div class="app-body">
+        <div class="sidebar">
+          <div class="ws-name">Acme Inc</div>
+          <div class="sb-tabs"><div class="sb-tab active">Channels</div><div class="sb-tab">Team</div></div>
+          <div class="sb-scroll">
+            <div class="sb-grp">Team</div>
+            <div class="ch-row"><span class="ch-hash">#</span>ops</div>
+            <div class="ch-row"><span class="ch-hash">#</span>product</div>
+            <div class="ch-row active"><span class="ch-hash">#</span>engineering <span class="ch-badge">1</span></div>
+            <div class="ch-row"><span class="ch-hash">#</span>design</div>
+            <div class="sb-grp">Rooms</div>
+            <div class="ch-row"><span class="ch-hash">#</span>standup</div>
+            <div class="ch-row"><span class="ch-hash">#</span>retrospective</div>
+          </div>
+          <div class="hire-link"><span>+</span> Hire teammate</div>
+        </div>
+        <div class="channel-area">
+          <div class="ch-header">
+            <span class="hash">#</span>engineering
+            <span class="role-chip engineering" style="font-size:11px;padding:2px 8px;border-radius:9999px;margin-left:6px;">Sam · Engineering</span>
+          </div>
+          <div class="thread">
+            <div class="sys-msg" style="color:var(--text-muted);">Monday, 9:00 AM</div>
+            <div class="msg-row">
+              <div class="avatar"><img src="https://i.pravatar.cc/150?img=33" alt="Sam"></div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-author">Sam</span>
+                  <span class="role-chip engineering">Engineering</span>
+                  <span class="msg-time">9:00 AM</span>
+                </div>
+                <div class="msg-text">Good morning! I did my usual Monday review over the weekend. Here's what I'm seeing:</div>
+                <div style="margin-top:10px;padding:12px;background:var(--canvas-subtle);border-radius:8px;border:1px solid var(--border);font-size:13px;line-height:20px;">
+                  <div style="font-weight:600;margin-bottom:8px;font-size:13px;">Weekly digest — 3 items</div>
+                  <div style="display:flex;gap:8px;margin-bottom:6px;"><span style="color:var(--success);">✓</span><span>No open PRs older than 3 days</span></div>
+                  <div style="display:flex;gap:8px;margin-bottom:6px;"><span style="color:var(--warning);">⚠</span><span>2 issues are flagged but unassigned — want me to pick them up?</span></div>
+                  <div style="display:flex;gap:8px;"><span style="color:var(--primary);">↑</span><span>Build time increased 40% this week — might be worth a quick look</span></div>
+                </div>
+                <div class="plan-card" style="margin-top:12px;">
+                  <div class="plan-hdr">📋 Sam's plan</div>
+                  <div class="plan-body">Pick up the 2 unassigned issues and investigate the build time increase. Estimated: 3–4 hours of work.</div>
+                  <div class="plan-btns">
+                    <button class="btn btn-p">Approve</button>
+                    <button class="btn btn-s">Remind me later</button>
+                    <button class="btn btn-s">Skip this week</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-area">
+            <textarea class="msg-input" rows="1" placeholder="Message Sam..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="annotation">
+    <strong>Proactive, not reactive.</strong> Sam surfaces a weekly digest unprompted on a schedule the founder configured during onboarding (Working Style screen). "Remind me later" snoozes 4 hours. "Skip this week" dismisses with inline micro-confirm. The digest is scannable in under 10 seconds.
+  </div>
+</section>
+
+</main>
+
+<script>
+  const sections = document.querySelectorAll('.screen-section');
+  const links    = document.querySelectorAll('.side-nav a');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const link = document.querySelector(`.side-nav a[href="#${e.target.id}"]`);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { threshold: 0.3 });
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
