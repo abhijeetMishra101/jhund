@@ -45,9 +45,10 @@ Do these in order. Each step produces a value you paste into Vercel env vars at 
 4. Subscribe to events: `pull_request`, `issues`, `push`
 5. Create app → go to **General** tab:
    - Copy **App ID** → `GITHUB_APP_ID`
-   - Generate a **Private Key** (downloads a `.pem` file) → contents → `GITHUB_APP_PRIVATE_KEY`
+   - Generate a **Private Key** (downloads a `.pem` file) → copy contents → `GITHUB_APP_PRIVATE_KEY`
    - Copy **Client ID** → `GITHUB_APP_CLIENT_ID`
    - Generate a **Client Secret** → `GITHUB_APP_CLIENT_SECRET`
+   - ⚠ **Delete the downloaded `.pem` file after copying its contents into Vercel.** Never commit it. Never email it. If it leaks, every workspace's GitHub access is compromised — rotate immediately via GitHub App → Generate new private key.
 
 ### Step 3 — Anthropic API Key (~2 min)
 1. Go to [console.anthropic.com](https://console.anthropic.com) → API Keys → Create key
@@ -96,6 +97,20 @@ NEXTAUTH_SECRET                   = [generate: openssl rand -base64 32]
 6. Configure TypeScript types generated from Supabase schema
 7. `.env.local` template committed (values excluded via `.gitignore`)
 8. Vercel auto-deploys preview URL on PR merge
+
+#### ⚠ Three database requirements — do not defer (Backend Developer)
+
+**1. Enable PgBouncer (connection pooler) from day one.**
+Vercel serverless functions spin up many instances under load; each wants a DB connection. Free tier allows 60 connections total. Without PgBouncer, a modest traffic spike exhausts the pool and all requests fail.
+- In Supabase → Settings → Database → Connection Pooling → enable PgBouncer
+- Use the **pooler connection string** (port 6543) in your app, not the direct string (port 5432)
+- Mode: **Transaction** (correct for serverless — each request gets a connection, releases immediately)
+
+**2. Add `.pem`, `*PRIVATE_KEY*`, and `*.env*` to `.gitignore` before the first commit.**
+One accidental commit of the GitHub App private key means rotating all workspace GitHub access.
+
+**3. System prompts live in `bot_roles.system_prompt` only — never in `messages`.**
+Storing prompts as message rows inflates the messages table, pollutes context windows, and leaks internal instructions to the frontend. The `messages` table is for conversation content only.
 
 ### End-of-session deliverable
 - PR to `main` with working Next.js shell, Supabase connected, schema migrated
@@ -301,6 +316,24 @@ Also cache the conversation summary (older-than-20-messages block) as a second `
    - Returns event → channel routing from `github_triggers` table
 6. `getInstallationToken(workspaceId)`:
    - Generates short-lived token from GitHub App private key
+   - **Security requirement**: `workspaceId` must always come from the authenticated Supabase session — never from the request body or query params. RLS on `github_installations` enforces this at the DB layer too, but the application layer must not accept attacker-controlled workspace IDs. One workspace must never be able to obtain another's installation token.
+
+#### ⚠ Two security requirements for webhook handling (Backend Developer)
+
+**1. Workspace resolved from GitHub payload only — never from user input.**
+Every webhook from GitHub includes `payload.installation.id`. Use that to look up the workspace in `github_installations`. Never accept a `workspaceId` or `channelId` in the webhook URL or body — those are attacker-controlled.
+
+```typescript
+// Correct
+const installationId = payload.installation.id          // from signed GitHub payload
+const workspace = await db.getWorkspaceByInstallation(installationId)
+
+// Wrong — never do this
+const workspaceId = req.query.workspaceId               // attacker-controlled
+```
+
+**2. HMAC signature validated before any payload parsing.**
+The signature check must be the very first line of the webhook handler — before JSON.parse, before database calls, before anything. Fail fast with `401` if invalid. Processing an unvalidated payload is a remote code injection vector.
 
 #### Webhook Receiver
 - `POST /api/github/webhook` — validates → routes → triggers
@@ -437,6 +470,25 @@ Riley's specific behaviours (Ops Bot role):
 - Riley synthesises cross-team patterns from past sprint messages
 - Each bot posts their wins + blockers
 
+#### ⚠ Message Archiving Cron — Required in this phase (Backend Developer)
+
+Without archiving, the `messages` table grows indefinitely. At 1,000 workspaces after 1 year: ~24M rows, ~12 GB. Supabase Pro includes 8 GB — you'd breach the tier.
+
+**The fix**: a weekly Vercel Cron that moves messages older than 90 days from Postgres to Supabase Storage as compressed JSON.
+
+```
+Live DB (Postgres):   messages from last 90 days   ← fast queries, Realtime, context window
+Archive (Storage):    older messages as .json.gz    ← ₹1.75/GB/month, retrieved on demand
+```
+
+- Cron: `GET /api/cron/archive-messages` — runs weekly (Sunday 2am)
+- Query: `SELECT * FROM messages WHERE created_at < NOW() - INTERVAL '90 days'`
+- Write to Storage as `archives/{workspaceId}/{channelId}/{month}.json.gz`
+- Delete archived rows from `messages` table
+- Storage cost at 10,000 workspaces × 2 years: ~₹17/month
+
+This keeps the live database under 500 MB indefinitely regardless of workspace count.
+
 ### End-of-session deliverable
 - All 5 bots respond in character with correct language
 - Opening a PR triggers Sam in #engineering automatically
@@ -457,14 +509,16 @@ Riley's specific behaviours (Ops Bot role):
 
 Review surface areas against OWASP Top 10 and Clan-specific risks:
 
-1. **Webhook signature validation** — confirm `POST /api/github/webhook` always validates HMAC before processing; no way to bypass
-2. **RLS policies** — verify every Supabase table has RLS that prevents cross-workspace data access
-3. **Anthropic API key exposure** — confirm key never reaches the client bundle; only used server-side
-4. **GitHub App private key** — confirm stored only in Vercel env vars; never logged or returned in API responses
-5. **Plan gate bypass** — confirm there is no code path that calls `github.createPR()` without first reading a `plans.status = 'approved'` row
-6. **Input sanitisation** — founder messages that contain prompt injection attempts (e.g. "Ignore your instructions and...") must not affect bot behavior
-7. **Action cap integrity** — atomic increment; no race condition that allows >50 actions
-8. **Auth session handling** — confirm all API routes except `/api/github/webhook` require valid Supabase session
+1. **Webhook signature validated first** — HMAC check is the very first line of `POST /api/github/webhook`; no payload parsing before it passes; returns `401` immediately on failure
+2. **Webhook workspace from payload only** — workspace resolved from `payload.installation.id` (GitHub-signed); no `workspaceId` accepted from URL params or request body
+3. **Installation token isolation** — `getInstallationToken(workspaceId)` derives `workspaceId` from Supabase session only; RLS on `github_installations` enforces this at DB layer too; verify no request-body workspace IDs anywhere in `lib/github/`
+4. **RLS policies** — verify every table has RLS; run a cross-workspace query as a non-owner user and confirm zero rows returned
+5. **Anthropic API key** — never in client bundle; grep for `ANTHROPIC_API_KEY` in any `'use client'` file — must return zero results
+6. **GitHub App private key** — never logged; never in API responses; grep for `GITHUB_APP_PRIVATE_KEY` in response objects — must return zero results
+7. **Plan gate bypass** — no code path reaches `github.createPR()` without a `plans.status = 'approved'` row; trace every call site
+8. **Prompt injection** — founder messages containing "ignore your instructions" or similar must not override bot persona; test with 5 injection patterns
+9. **Action cap race condition** — `actions_used` increment is atomic SQL (`UPDATE workspaces SET actions_used = actions_used + 1 WHERE id = $1 AND actions_used < action_cap RETURNING id`); a zero-row result means cap was hit; no application-layer race possible
+10. **Auth on all routes** — every API route except `/api/github/webhook` and `/auth/*` rejects requests with no valid Supabase session cookie
 
 Output: security findings report in `docs/security/2026-04-23-review.md` with severity (Critical / Major / Minor) and recommended fix for each finding.
 
@@ -568,7 +622,10 @@ At the end of every session:
 |---|---|---|---|
 | Supabase Realtime latency feels slow | Low | Medium | Acceptable for MVP; swap to Ably if needed post-launch |
 | Claude API rate limits during Phase 7 prompt tuning | Medium | Low | Use exponential backoff; tune prompts in batches |
-| GitHub App private key rotation needed | Low | High | Store in Vercel only; rotate via GitHub App settings |
+| GitHub App private key rotation needed | Low | High | Store in Vercel env vars only; rotate immediately via GitHub App → Generate new private key if suspected leak |
 | Context window exhausted in long threads | Medium | Medium | 20-message window + summarisation (already in Phase 3) |
 | Scope creep adding screens mid-build | Medium | High | Any new feature requires a Decision log entry first (per PRD freeze policy) |
 | Fashion Trend Pipeline repo not compatible with trigger rules | Low | Low | Seed test trigger rules in Phase 5; adjust after Gate 3 |
+| DB connection pool exhausted under Vercel serverless load | Medium | High | PgBouncer enabled in Phase 1 (transaction mode, port 6543) — resolves this entirely |
+| messages table grows unbounded at scale | Medium | High | Message archiving cron in Phase 7 — moves rows older than 90 days to Storage |
+| Wrong workspace served installation token (cross-tenant data access) | Low | Critical | `workspaceId` always from session + RLS on `github_installations` — both layers enforced in Phase 5, verified in Phase 8 |
