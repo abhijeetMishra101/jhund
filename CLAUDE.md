@@ -1,13 +1,13 @@
-# Jhund — Project Kickoff
+# Clan — Project Kickoff
 
-## What is Jhund
+## What is Clan
 A Slack-like app where every teammate is an AI bot. Founders hire a
 self-sustaining AI team (Product Owner, Architect, Backend, Designer,
 QA etc.), talk to them like Slack colleagues, and bots actually ship
 work via GitHub triggers.
 
 ## Core Metaphor
-You're a founder. Jhund is your office. Every channel is a teammate.
+You're a founder. Clan is your office. Every channel is a teammate.
 Git events trigger the right bot automatically. No technical setup —
 pick a team template and go.
 
@@ -25,7 +25,7 @@ pick a team template and go.
 - **Git triggers**: PR → Backend reviews, issue tagged `security` → Security audits
 
 ## Name
-**Jhund** — Hindi word for a self-sustaining swarm/horde. Chosen for
+**Clan** — Hindi word for a self-sustaining swarm/horde. Chosen for
 raw punch — same unexpected energy as "Slack." Signals Indian roots
 without being Indian-coded globally.
 
@@ -33,14 +33,14 @@ without being Indian-coded globally.
 - Separate repo from `fashion-trend-pipeline`
 - Built using thepopebot as the development environment
 - Product Owner + Architect roles first, then build
-- Fashion Trend Pipeline is the first guinea pig to run on Jhund
+- Fashion Trend Pipeline is the first guinea pig to run on Clan
 
 ## Immediate Next Steps
 1. Install thepopebot locally
 2. Configure Product Owner role → validate business idea, ICP, monetisation
 3. Configure Architect role → tech stack, MVP scope, system design
-4. Build Jhund
-5. Migrate fashion project to run on Jhund as first guinea pig
+4. Build Clan
+5. Migrate fashion project to run on Clan as first guinea pig
 
 ## Roles (to configure in thepopebot)
 
@@ -50,7 +50,7 @@ models, scopes MVP, maps competitors, sequences by user value.
 Outputs: Strategic Brief, MVP Recommendation, Assumption Map.
 
 **First question to ask:**
-"Who is Jhund's primary user and what does their first 10 minutes look like?"
+"Who is Clan's primary user and what does their first 10 minutes look like?"
 
 ### Architect
 Strategic technical lead. Designs module interfaces, identifies
@@ -58,7 +58,7 @@ blockers, proposes stack decisions. Does not write implementation code
 — outputs specs, ADRs, system diagrams.
 
 **First question to ask:**
-"What is the minimum viable tech stack to ship a working Jhund prototype?"
+"What is the minimum viable tech stack to ship a working Clan prototype?"
 
 ### Backend Developer
 Implements features. Follows conventions, writes typed minimal code,
@@ -83,6 +83,6 @@ team templates. Greets new users on onboarding.
 ## Guinea Pig Project
 `~/Developer/fashion-trend-pipeline` — an AI fashion pipeline with
 6 modules (M1 done, M2–M6 pending). Will be migrated to run inside
-Jhund once the product is live. Its roles (Architect, Backend, ML,
+Clan once the product is live. Its roles (Architect, Backend, ML,
 Security, Test, Product) are already defined as Claude Code slash
 commands in that repo.
