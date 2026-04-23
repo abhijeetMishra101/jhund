@@ -254,7 +254,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      increment_action_count: {
+        Args: { p_workspace_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
