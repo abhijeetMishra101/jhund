@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { respondToMessage, ActionCapExceededError } from '@/lib/bots'
 
@@ -56,11 +57,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to store message' }, { status: 500 })
   }
 
-  // Fire-and-forget bot response — do not await
-  respondToMessage(channelId, userRow.workspace_id).catch((err: unknown) => {
-    if (err instanceof ActionCapExceededError) return
-    console.error('[bot] respondToMessage failed:', err)
-  })
+  // Keep the serverless function alive until the bot responds (Vercel kills
+  // execution as soon as the response is sent without waitUntil)
+  waitUntil(
+    respondToMessage(channelId, userRow.workspace_id).catch((err: unknown) => {
+      if (err instanceof ActionCapExceededError) return
+      console.error('[bot] respondToMessage failed:', err)
+    })
+  )
 
   return NextResponse.json({ id: message.id }, { status: 201 })
 }
