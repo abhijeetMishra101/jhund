@@ -24,15 +24,16 @@ export async function buildMessageHistory(
 
   if (error) throw new Error(`Failed to fetch message history: ${error.message}`)
 
-  // Reverse to oldest-first, filter system messages
+  // Reverse to oldest-first. System messages (e.g. GitHub events) are
+  // mapped to 'user' role so the bot has context about what triggered it.
   const turns = (messages ?? [])
     .reverse()
-    .filter((m) => m.author_type === 'user' || m.author_type === 'bot')
+    .filter((m) => m.author_type === 'user' || m.author_type === 'bot' || m.author_type === 'system')
 
   // Anthropic requires alternating user/assistant — collapse consecutive same-role messages
   const params: MessageParam[] = []
   for (const msg of turns) {
-    const role = msg.author_type === 'user' ? 'user' : 'assistant'
+    const role = msg.author_type === 'bot' ? 'assistant' : 'user'
     const last = params[params.length - 1]
     if (last && last.role === role) {
       // Merge with previous same-role turn (rare edge case)
