@@ -49,7 +49,7 @@ export async function POST(request: Request) {
           .insert({
             channel_id: channelId,
             author_type: 'system',
-            author_id: installationId,
+            author_id: workspaceId,
             content: summary,
           })
           .select('id')
