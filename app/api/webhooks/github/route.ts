@@ -6,9 +6,6 @@ import { routeGithubEvent } from '@/lib/github/router'
 import { createServiceClient } from '@/lib/supabase/server'
 import { respondToMessage } from '@/lib/bots'
 
-// Disable body parsing — we need the raw bytes for HMAC verification
-export const config = { api: { bodyParser: false } }
-
 export async function POST(request: Request) {
   // 1. Read raw body BEFORE any parsing
   const rawBody = Buffer.from(await request.arrayBuffer())
