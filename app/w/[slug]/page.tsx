@@ -28,16 +28,23 @@ export default async function WorkspacePage({ params }: Props) {
 
   if (!workspace || workspace.slug !== params.slug) redirect('/auth/login')
 
-  const { data: channels } = await supabase
-    .from('channels')
-    .select()
-    .eq('workspace_id', workspace.id)
-    .order('position')
+  const [{ data: channels }, { data: botRoles }] = await Promise.all([
+    supabase
+      .from('channels')
+      .select()
+      .eq('workspace_id', workspace.id)
+      .order('position'),
+    supabase
+      .from('bot_roles')
+      .select('id, display_name, avatar_seed')
+      .eq('workspace_id', workspace.id),
+  ])
 
   return (
     <WorkspaceShell
       workspace={workspace}
       channels={channels ?? []}
+      botRoles={botRoles ?? []}
     />
   )
 }

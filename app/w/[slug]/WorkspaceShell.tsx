@@ -6,12 +6,20 @@ import type { Workspace, Channel, Message } from '@/lib/supabase/types'
 
 const POLL_INTERVAL_MS = 3000
 
+interface BotRoleSummary {
+  id: string
+  display_name: string
+  avatar_seed: string
+}
+
 interface Props {
   workspace: Workspace
   channels: Channel[]
+  botRoles: BotRoleSummary[]
 }
 
-export default function WorkspaceShell({ workspace, channels }: Props) {
+export default function WorkspaceShell({ workspace, channels, botRoles }: Props) {
+  const botRoleMap = Object.fromEntries(botRoles.map((b) => [b.id, b]))
   const [activeChannelId, setActiveChannelId] = useState<string>(channels[0]?.id ?? '')
   const [messages, setMessages] = useState<Message[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -265,9 +273,9 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
               No messages yet. Say something to your teammate.
             </p>
           ) : (
-            <div className="max-w-2xl space-y-4">
+            <div className="w-full space-y-3">
               {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
+                <MessageBubble key={msg.id} message={msg} botRole={botRoleMap[msg.author_id]} />
               ))}
             </div>
           )}
@@ -303,37 +311,66 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
   )
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message,
+  botRole,
+}: {
+  message: Message
+  botRole?: { display_name: string }
+}) {
   const isUser = message.author_type === 'user'
   const isSystem = message.author_type === 'system'
 
   if (isSystem) {
     return (
-      <div className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+      <div className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mx-auto max-w-md">
         {message.content}
       </div>
     )
   }
 
+  const botName = botRole?.display_name ?? 'Bot'
+  const botInitial = botName.charAt(0).toUpperCase()
+
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-      {/* Avatar */}
-      <div
-        className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-        style={{ backgroundColor: isUser ? '#1164a3' : '#4f46e5' }}
-      >
-        {isUser ? 'You' : 'AI'}
+    <div className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+      {/* Bot avatar — left side only */}
+      {!isUser && (
+        <div
+          className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white mb-1"
+          style={{ backgroundColor: '#4f46e5' }}
+          title={botName}
+        >
+          {botInitial}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-0.5 max-w-[70%]">
+        {/* Sender label */}
+        <span className={`text-[11px] font-medium px-1 ${isUser ? 'text-right text-gray-400' : 'text-gray-500'}`}>
+          {isUser ? 'You' : botName}
+        </span>
+        {/* Bubble */}
+        <div
+          className={`px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+            isUser
+              ? 'bg-indigo-600 text-white rounded-2xl rounded-br-sm'
+              : 'bg-gray-100 text-gray-900 rounded-2xl rounded-bl-sm'
+          }`}
+        >
+          {message.content}
+        </div>
       </div>
-      {/* Bubble */}
-      <div
-        className={`max-w-sm px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-          isUser
-            ? 'bg-indigo-600 text-white rounded-tr-sm'
-            : 'bg-gray-100 text-gray-900 rounded-tl-sm'
-        }`}
-      >
-        {message.content}
-      </div>
+
+      {/* User avatar — right side only */}
+      {isUser && (
+        <div
+          className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white mb-1"
+          style={{ backgroundColor: '#1164a3' }}
+        >
+          You
+        </div>
+      )}
     </div>
   )
 }
