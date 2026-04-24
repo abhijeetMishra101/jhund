@@ -93,6 +93,19 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     }
   }, [activeChannelId, actionCap])
 
+  // Background poll — refreshes the active channel every 5s to catch
+  // webhook-triggered messages that arrive without user interaction.
+  useEffect(() => {
+    if (!activeChannelId) return
+    const interval = setInterval(() => {
+      fetch(`/api/messages/${activeChannelId}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data) setMessages(data) })
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [activeChannelId])
+
   // Polling fallback — kicks in after user sends a message, stops on bot reply.
   // Handles environments where Supabase Realtime isn't fully configured.
   useEffect(() => {
