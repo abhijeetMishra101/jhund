@@ -24,14 +24,15 @@ export async function POST(request: Request) {
 
   // 3. Summarise the event in plain English
   const summary = summariseEvent(eventType, payload)
+  console.log('[webhook] event:', eventType, '| installationId:', installationId, '| summary:', summary || '(empty)')
   if (!summary) {
-    // Event type we don't handle — acknowledge and exit
     return NextResponse.json({ ok: true })
   }
 
   // 4. Route to matching channels via github_triggers
   const labels = extractLabels(payload)
   const matches = await routeGithubEvent(installationId, eventType, labels)
+  console.log('[webhook] matches:', JSON.stringify(matches))
 
   if (!matches.length) {
     return NextResponse.json({ ok: true })
@@ -43,8 +44,7 @@ export async function POST(request: Request) {
   waitUntil(
     Promise.all(
       matches.map(async ({ channelId, workspaceId }) => {
-        // Insert the plain-English GitHub event as a system message
-        const { data: msg } = await supabase
+        const { data: msg, error: insertError } = await supabase
           .from('messages')
           .insert({
             channel_id: channelId,
@@ -55,9 +55,10 @@ export async function POST(request: Request) {
           .select('id')
           .single()
 
+        console.log('[webhook] insert msg:', msg?.id ?? 'null', insertError?.message ?? '')
+
         if (!msg) return
 
-        // Trigger the bot to respond to the event
         await respondToMessage(channelId, workspaceId).catch((err: unknown) => {
           console.error('[webhook] bot response failed:', err)
         })
