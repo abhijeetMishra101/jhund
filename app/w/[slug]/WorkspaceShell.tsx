@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Workspace, Channel, Message } from '@/lib/supabase/types'
 
+const POLL_INTERVAL_MS = 3000
+
 interface Props {
   workspace: Workspace
   channels: Channel[]
@@ -16,8 +18,10 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
   const [inputValue, setInputValue] = useState('')
   const [sending, setSending] = useState(false)
   const [actionsUsed, setActionsUsed] = useState(workspace.actions_used)
+  const [waitingForBot, setWaitingForBot] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const actionCap = workspace.action_cap
   const pctUsed = Math.round((actionsUsed / actionCap) * 100)
@@ -41,6 +45,7 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
   useEffect(() => {
     if (!activeChannelId) return
     setMessages([])
+    setWaitingForBot(false)
     fetchMessages(activeChannelId)
   }, [activeChannelId, fetchMessages])
 
@@ -66,8 +71,9 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
             if (prev.some((m) => m.id === newMsg.id)) return prev
             return [...prev, newMsg]
           })
-          // If it's a bot message, refresh action counter
+          // If it's a bot message, stop poll + refresh counter
           if (newMsg.author_type === 'bot') {
+            setWaitingForBot(false)
             setActionsUsed((n) => Math.min(n + 1, actionCap))
           }
         }
@@ -78,6 +84,29 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
       supabase.removeChannel(channel)
     }
   }, [activeChannelId, actionCap])
+
+  // Polling fallback — kicks in after user sends a message, stops on bot reply.
+  // Handles environments where Supabase Realtime isn't fully configured.
+  useEffect(() => {
+    if (!waitingForBot || !activeChannelId) return
+
+    const poll = async () => {
+      const res = await fetch(`/api/messages/${activeChannelId}`)
+      if (!res.ok) return
+      const data: Message[] = await res.json()
+      const lastMsg = data[data.length - 1]
+      if (lastMsg?.author_type === 'bot') {
+        setMessages(data)
+        setWaitingForBot(false)
+        setActionsUsed((n) => Math.min(n + 1, actionCap))
+      }
+    }
+
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [waitingForBot, activeChannelId, actionCap])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -134,10 +163,11 @@ export default function WorkspaceShell({ workspace, channels }: Props) {
       }
 
       const { id: realId } = await res.json()
-      // Replace optimistic with real id
+      // Replace optimistic with real id, then start polling for bot reply
       setMessages((prev) =>
         prev.map((m) => (m.id === optimisticId ? { ...m, id: realId } : m))
       )
+      setWaitingForBot(true)
     } finally {
       setSending(false)
       inputRef.current?.focus()
