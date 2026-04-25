@@ -352,12 +352,27 @@ function PlanCard({
 
   useEffect(() => {
     fetch(`/api/plans/${planId}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setPlan(data) })
-      .catch(() => {})
+      .then((r) => {
+        if (!r.ok) {
+          console.error('[PlanCard] fetch failed:', r.status, planId)
+          return null
+        }
+        return r.json()
+      })
+      .then((data) => {
+        console.log('[PlanCard] fetched plan:', data)
+        if (data) setPlan(data)
+      })
+      .catch((err) => console.error('[PlanCard] fetch error:', err))
   }, [planId])
 
-  if (!plan) return null
+  if (!plan) {
+    return (
+      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-600">
+        Loading action…
+      </div>
+    )
+  }
 
   const handleApprove = async () => {
     setLoading(true)
