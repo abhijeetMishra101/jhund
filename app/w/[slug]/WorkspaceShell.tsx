@@ -4,6 +4,14 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Workspace, Channel, Message } from '@/lib/supabase/types'
 
+type PlanStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'failed'
+
+interface PlanSummary {
+  id: string
+  status: PlanStatus
+  description_md: string
+}
+
 const POLL_INTERVAL_MS = 3000
 
 interface BotRoleSummary {
@@ -288,7 +296,15 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
           ) : (
             <div className="w-full space-y-3">
               {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} botRole={botRoleMap[msg.author_id]} />
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  botRole={botRoleMap[msg.author_id]}
+                  onPlanAction={(_planId, _status) => {
+                    // Re-fetch messages after approve/reject so new bot message appears
+                    fetchMessages(activeChannelId)
+                  }}
+                />
               ))}
             </div>
           )}
@@ -324,12 +340,97 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
   )
 }
 
+function PlanCard({
+  planId,
+  onAction,
+}: {
+  planId: string
+  onAction: (planId: string, status: PlanStatus) => void
+}) {
+  const [plan, setPlan] = useState<PlanSummary | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/plans/${planId}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setPlan(data) })
+      .catch(() => {})
+  }, [planId])
+
+  if (!plan) return null
+
+  const handleApprove = async () => {
+    setLoading(true)
+    await fetch(`/api/plans/${planId}/approve`, { method: 'POST' })
+    onAction(planId, 'approved')
+    setPlan((p) => p ? { ...p, status: 'approved' } : p)
+    setLoading(false)
+  }
+
+  const handleReject = async () => {
+    setLoading(true)
+    await fetch(`/api/plans/${planId}/reject`, { method: 'POST' })
+    onAction(planId, 'rejected')
+    setPlan((p) => p ? { ...p, status: 'rejected' } : p)
+    setLoading(false)
+  }
+
+  const isPending = plan.status === 'pending'
+
+  const statusColors: Record<PlanStatus, string> = {
+    pending: 'bg-amber-50 border-amber-300',
+    approved: 'bg-green-50 border-green-300',
+    rejected: 'bg-gray-50 border-gray-300',
+    executed: 'bg-blue-50 border-blue-300',
+    failed: 'bg-red-50 border-red-300',
+  }
+
+  const statusLabels: Record<PlanStatus, string> = {
+    pending: 'Waiting for your approval',
+    approved: 'Approved — running…',
+    rejected: 'Rejected',
+    executed: 'Done',
+    failed: 'Failed',
+  }
+
+  return (
+    <div className={`mt-2 rounded-xl border p-3 text-sm ${statusColors[plan.status]}`}>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+        Proposed action
+      </p>
+      <p className="text-gray-800 mb-2">{plan.description_md}</p>
+      {isPending ? (
+        <div className="flex gap-2">
+          <button
+            onClick={handleApprove}
+            disabled={loading}
+            className="px-3 py-1 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
+          >
+            Approve
+          </button>
+          <button
+            onClick={handleReject}
+            disabled={loading}
+            className="px-3 py-1 text-xs font-medium rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
+            Reject
+          </button>
+        </div>
+      ) : (
+        <span className="text-xs text-gray-500 font-medium">{statusLabels[plan.status]}</span>
+      )}
+    </div>
+  )
+}
+
 function MessageBubble({
   message,
   botRole,
+  onPlanAction,
 }: {
   message: Message
   botRole?: { display_name: string }
+  onPlanAction: (planId: string, status: PlanStatus) => void
 }) {
   const isUser = message.author_type === 'user'
   const isSystem = message.author_type === 'system'
@@ -373,6 +474,10 @@ function MessageBubble({
         >
           {message.content}
         </div>
+        {/* Plan approval card — shown below bot message when plan_id is set */}
+        {message.plan_id && !isUser && (
+          <PlanCard planId={message.plan_id} onAction={onPlanAction} />
+        )}
       </div>
 
       {/* User avatar — right side only */}
