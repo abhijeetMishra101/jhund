@@ -99,7 +99,7 @@ describe('respondToMessage', () => {
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
-    expect(insertedPayload?.plan_id).toBeUndefined()
+    expect((insertedPayload as Record<string, unknown> | null)?.plan_id).toBeUndefined()
   })
 
   it('creates a plan row when Claude uses propose_github_action tool', async () => {
