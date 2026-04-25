@@ -56,8 +56,7 @@ export async function executePlanActions(planId: string, workspaceId: string): P
 }
 
 async function executeAction(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  octokit: any,
+  octokit: any, // Octokit from @octokit/app lacks .rest typings
   owner: string,
   repo: string,
   action: GithubAction
