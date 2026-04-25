@@ -35,6 +35,9 @@ jobs:
       - name: Run tsc --noEmit
         run: npm run typecheck
 
+      - name: Verify next build compiles (matches Vercel type-check exactly)
+        run: npm run build
+
   # ── Job 2: ESLint ─────────────────────────────────────────────────────────
   lint:
     name: Lint
