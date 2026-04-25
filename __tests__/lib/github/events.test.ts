@@ -59,6 +59,15 @@ describe('summariseEvent — issues', () => {
     expect(out).toContain('labeled')
     expect(out).toContain('security')
   })
+
+  it('assigned falls through to generic action summary', () => {
+    const out = summariseEvent('issues', {
+      action: 'assigned',
+      issue: { number: 3, title: 'X', user: { login: 'bob' }, labels: [] },
+      repository: { name: 'repo' },
+    })
+    expect(out).toContain('assigned')
+  })
 })
 
 describe('summariseEvent — issue_comment', () => {

@@ -117,6 +117,29 @@ describe('routeGithubEvent', () => {
     expect(result[0].channelId).toBe('ch-2')
   })
 
+  it('returns [] when allTriggers query returns null (uses ?? [] fallback)', async () => {
+    const triggers = [{ channel_id: CHANNEL_ID, label_filter: null }]
+
+    mockServiceFrom
+      .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID }))
+      .mockReturnValueOnce({ // first triggers query (existence check)
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockImplementation(function(this: unknown) {
+          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
+        }),
+      })
+      .mockReturnValueOnce({ // second triggers query returns null data
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockImplementation(function(this: unknown) {
+          return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) }
+        }),
+      })
+
+    const { routeGithubEvent } = await import('@/lib/github/router')
+    const result = await routeGithubEvent(INSTALLATION_ID, 'pull_request', [])
+    expect(result).toEqual([])
+  })
+
   it('includes trigger when label_filter matches a payload label', async () => {
     const triggers = [{ channel_id: CHANNEL_ID, label_filter: 'security' }]
 

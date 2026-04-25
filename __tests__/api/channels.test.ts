@@ -52,6 +52,25 @@ describe('GET /api/channels', () => {
     expect(res.status).toBe(401)
   })
 
+  it('returns 500 when channels fetch returns an error', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    let callIdx = 0
+    mockFrom.mockImplementation(() => {
+      callIdx++
+      const chain: Record<string, unknown> = {}
+      chain.select = vi.fn().mockReturnValue(chain)
+      chain.eq = vi.fn().mockReturnValue(chain)
+      if (callIdx === 1) {
+        chain.single = vi.fn().mockResolvedValue({ data: { workspace_id: WORKSPACE_ID }, error: null })
+      } else {
+        chain.order = vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } })
+      }
+      return chain
+    })
+    const res = await GET()
+    expect(res.status).toBe(500)
+  })
+
   it('returns 404 when user has no workspace', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
     mockFrom.mockReturnValueOnce({

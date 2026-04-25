@@ -1,0 +1,94 @@
+name: CI
+
+# Runs on every PR and on direct pushes to main.
+# Three gates must all pass before a PR can merge:
+#   1. typecheck  — no TypeScript errors
+#   2. lint       — no ESLint violations
+#   3. test       — all tests pass AND coverage floors are met (see vitest.config.ts)
+#
+# Coverage thresholds are a ratchet: update them upward as each phase lands,
+# never downward. The floors enforce that the main use cases for the current
+# phase remain contractually tested.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  # ── Job 1: TypeScript type check ──────────────────────────────────────────
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tsc --noEmit
+        run: npm run typecheck
+
+  # ── Job 2: ESLint ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # ── Job 3: Tests + Coverage ───────────────────────────────────────────────
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        # vitest will exit non-zero if any threshold in vitest.config.ts is not met.
+        # This is the enforcement mechanism — not a soft warning.
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+      - name: Print coverage summary to job log
+        if: always()
+        run: |
+          echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          node -e "
+            const s = require('./coverage/coverage-summary.json').total;
+            const fmt = (k) => \`\${k.padEnd(12)} \${String(s[k].pct).padStart(6)}%  (\${s[k].covered}/\${s[k].total})\`;
+            ['statements','branches','functions','lines'].forEach(k => console.log(fmt(k)));
+          " >> $GITHUB_STEP_SUMMARY || echo "(coverage-summary.json not found)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

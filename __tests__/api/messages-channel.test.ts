@@ -95,6 +95,41 @@ describe('GET /api/messages/[channelId]', () => {
     expect(res.status).toBe(401)
   })
 
+  it('returns 404 when userRow is null (user not found)', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })
+    const req = new Request(`http://localhost/api/messages/${CHANNEL_ID}`)
+    const res = await GET(req, { params: { channelId: CHANNEL_ID } })
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error).toBe('User not found')
+  })
+
+  it('returns 500 when messages DB query fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { workspace_id: WORKSPACE_ID }, error: null }),
+      })
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: CHANNEL_ID }, error: null }),
+      })
+      .mockReturnValueOnce({
+        select: vi.fn().mockImplementation(() => ({
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+        })),
+      })
+    const req = new Request(`http://localhost/api/messages/${CHANNEL_ID}`)
+    const res = await GET(req, { params: { channelId: CHANNEL_ID } })
+    expect(res.status).toBe(500)
+  })
+
   it('returns 404 when channel does not belong to user workspace (anti-IDOR)', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
     mockServiceFrom

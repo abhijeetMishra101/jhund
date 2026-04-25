@@ -97,6 +97,17 @@ describe('POST /api/messages', () => {
     expect(res.status).toBe(400)
   })
 
+  it('returns 404 when user row is not found', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom.mockReset()
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })
+    const res = await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
+    expect(res.status).toBe(404)
+  })
+
   it('returns 404 when channel does not belong to workspace (anti-IDOR)', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
     mockServiceFrom.mockReset()
@@ -112,6 +123,22 @@ describe('POST /api/messages', () => {
 
     const res = await POST(makeReq({ channelId: 'other-channel', content: 'hello' }))
     expect(res.status).toBe(404)
+  })
+
+  it('returns 201 when respondToMessage throws ActionCapExceededError (error silently swallowed)', async () => {
+    setupAuthMocks()
+    const { respondToMessage, ActionCapExceededError } = await import('@/lib/bots')
+    vi.mocked(respondToMessage).mockRejectedValueOnce(new ActionCapExceededError())
+    const res = await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
+    expect(res.status).toBe(201)
+  })
+
+  it('returns 201 when respondToMessage throws a generic error (error silently swallowed)', async () => {
+    setupAuthMocks()
+    const { respondToMessage } = await import('@/lib/bots')
+    vi.mocked(respondToMessage).mockRejectedValueOnce(new Error('unexpected failure'))
+    const res = await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
+    expect(res.status).toBe(201)
   })
 
   it('returns 500 when message insert fails', async () => {

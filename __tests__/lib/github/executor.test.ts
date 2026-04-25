@@ -159,6 +159,44 @@ describe('executePlanActions', () => {
     }))
   })
 
+  it('create_issue: when labels is not an array, passes empty array to issues.create', async () => {
+    const actions = [{ action_type: 'create_issue', payload: { title: 'Bug', body: 'desc', labels: 'bug' } }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockIssuesCreate).toHaveBeenCalledWith(expect.objectContaining({
+      labels: [],
+    }))
+  })
+
+  it('create_pr: swallows createRef error and still calls pulls.create', async () => {
+    mockGitCreateRef.mockRejectedValueOnce(new Error('Reference already exists'))
+
+    const actions = [{
+      action_type: 'create_pr',
+      payload: { title: 'New PR', body: 'desc', head_branch: 'feat/x', base_branch: 'main' },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockGitCreateRef).toHaveBeenCalled()
+    expect(mockPullsCreate).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'New PR',
+      head: 'feat/x',
+      base: 'main',
+    }))
+  })
+
   it('marks plan as executed after successful actions', async () => {
     const actions = [{ action_type: 'create_issue', payload: { title: 'Test', body: '', labels: [] } }]
     const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })

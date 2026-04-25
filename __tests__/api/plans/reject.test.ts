@@ -65,6 +65,42 @@ describe('POST /api/plans/[id]/reject', () => {
     expect((msg.content as string).toLowerCase()).toContain("won't")
   })
 
+  it('returns 404 when userRow is null', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom.mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(
+        table === 'users'
+          ? { data: null, error: null }
+          : { data: null, error: null }
+      ),
+      update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) }),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }))
+    const req = new Request(`http://localhost/api/plans/${PLAN_ID}/reject`, { method: 'POST' })
+    const res = await POST(req, { params: { id: PLAN_ID } })
+    expect(res.status).toBe(404)
+  })
+
+  it('returns 404 when plan is null', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom.mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(
+        table === 'users'
+          ? { data: { workspace_id: WORKSPACE_ID }, error: null }
+          : { data: null, error: null } // plans returns null
+      ),
+      update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) }),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }))
+    const req = new Request(`http://localhost/api/plans/${PLAN_ID}/reject`, { method: 'POST' })
+    const res = await POST(req, { params: { id: PLAN_ID } })
+    expect(res.status).toBe(404)
+  })
+
   it('returns 409 for an already-rejected plan', async () => {
     setupMocks('rejected')
     const req = new Request(`http://localhost/api/plans/${PLAN_ID}/reject`, { method: 'POST' })

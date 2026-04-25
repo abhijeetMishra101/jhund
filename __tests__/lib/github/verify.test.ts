@@ -43,4 +43,14 @@ describe('verifyGithubSignature', () => {
   it('returns false for signature with correct prefix but wrong hash', () => {
     expect(verifyGithubSignature(BODY, 'sha256=deadbeef')).toBe(false)
   })
+
+  it('throws when GITHUB_WEBHOOK_SECRET env var is not set', () => {
+    const saved = process.env.GITHUB_WEBHOOK_SECRET
+    delete process.env.GITHUB_WEBHOOK_SECRET
+    try {
+      expect(() => verifyGithubSignature(BODY, sign(BODY))).toThrow('GITHUB_WEBHOOK_SECRET env var is not set')
+    } finally {
+      process.env.GITHUB_WEBHOOK_SECRET = saved
+    }
+  })
 })

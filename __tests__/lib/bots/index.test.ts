@@ -198,6 +198,114 @@ describe('respondToMessage', () => {
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('No bot configured')
   })
 
+  it('throws "No messages to respond to" when buildMessageHistory returns empty array', async () => {
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    vi.mocked(buildMessageHistory).mockResolvedValueOnce([])
+
+    mockServiceFrom
+      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
+      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('No messages to respond to')
+    expect(mockMessagesCreate).not.toHaveBeenCalled()
+  })
+
+  it('throws "Failed to create plan" when plan insert returns error', async () => {
+    mockServiceFrom.mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(
+        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
+        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
+        : { data: null, error: null }
+      ),
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB insert failed' } }),
+      }),
+    }))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'tool_use',
+          name: 'propose_github_action',
+          input: {
+            action_type: 'create_issue',
+            plain_english_description: 'Create a bug report',
+            payload: { title: 'Bug', body: 'desc' },
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to create plan')
+  })
+
+  it('throws "Failed to store bot reply" when message insert fails after tool use', async () => {
+    let insertCallCount = 0
+    mockServiceFrom.mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(
+        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
+        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
+        : { data: null, error: null }
+      ),
+      insert: vi.fn().mockImplementation(() => {
+        insertCallCount++
+        // First insert (plans) succeeds, second (messages) fails
+        const data = insertCallCount === 1 ? { id: 'plan-uuid' } : null
+        const error = insertCallCount === 2 ? { message: 'message insert failed' } : null
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data, error }) }
+      }),
+    }))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'tool_use',
+          name: 'propose_github_action',
+          input: {
+            action_type: 'create_issue',
+            plain_english_description: 'Create a bug report',
+            payload: { title: 'Bug', body: 'desc' },
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store bot reply')
+  })
+
+  it('throws "Failed to store bot reply" when plain text message insert fails', async () => {
+    mockServiceFrom
+      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
+      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: null, error: { message: 'insert failed' } }),
+        }),
+      })
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Hello there!' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store bot reply')
+  })
+
   it('throws when Claude returns empty text', async () => {
     mockServiceFrom
       .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))

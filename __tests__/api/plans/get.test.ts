@@ -47,6 +47,13 @@ describe('GET /api/plans/[id]', () => {
     expect(body).toEqual({ id: PLAN_ID, status: 'pending', description_md: 'Create a bug report' })
   })
 
+  it('returns 404 when userRow is null (user not found)', async () => {
+    mockServiceFrom.mockReturnValueOnce(chain(null))
+    const req = new Request(`http://localhost/api/plans/${PLAN_ID}`)
+    const res = await GET(req, { params: { id: PLAN_ID } })
+    expect(res.status).toBe(404)
+  })
+
   it('returns 404 when plan does not exist', async () => {
     mockServiceFrom
       .mockReturnValueOnce(chain({ workspace_id: WORKSPACE_ID }))

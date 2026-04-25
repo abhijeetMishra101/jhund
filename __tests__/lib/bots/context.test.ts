@@ -91,6 +91,19 @@ describe('buildMessageHistory', () => {
     ])
   })
 
+  it('filters out messages with unknown author_type', async () => {
+    mockServiceFrom.mockReturnValueOnce(makeChain([
+      { author_type: 'webhook', content: 'should be filtered' },
+      { author_type: 'user', content: 'hello' },
+    ]))
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    const result = await buildMessageHistory('channel-1')
+    // After reverse: [user:'hello', webhook:'should be filtered']
+    // webhook is filtered out, only user message remains
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual({ role: 'user', content: 'hello' })
+  })
+
   it('throws when the DB query fails', async () => {
     mockServiceFrom.mockReturnValueOnce({
       select: vi.fn().mockReturnThis(),

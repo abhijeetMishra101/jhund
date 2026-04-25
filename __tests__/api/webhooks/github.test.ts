@@ -69,6 +69,20 @@ describe('POST /api/webhooks/github', () => {
     expect(mockServiceFrom).not.toHaveBeenCalled()
   })
 
+  it('returns 200 ok when installation field is absent (installationId defaults to empty string)', async () => {
+    mockRouteGithubEvent.mockResolvedValue([])
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    const payload = {
+      action: 'opened',
+      pull_request: { number: 2, title: 'No install', user: { login: 'bob' }, merged: false },
+      repository: { name: 'my-repo' },
+      // no installation field
+    }
+    const res = await POST(makeWebhookReq(payload, 'pull_request'))
+    expect(res.status).toBe(200)
+    expect(mockRouteGithubEvent).toHaveBeenCalledWith('', 'pull_request', expect.any(Array))
+  })
+
   it('inserts a system message and calls respondToMessage when a channel matches', async () => {
     mockRouteGithubEvent.mockResolvedValue([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
     mockServiceFrom.mockReturnValue({
@@ -88,6 +102,38 @@ describe('POST /api/webhooks/github', () => {
 
     expect(res.status).toBe(200)
     expect(mockServiceFrom).toHaveBeenCalled()
+    expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID)
+  })
+
+  it('does not crash and still returns 200 when respondToMessage throws inside the waitUntil map', async () => {
+    mockRouteGithubEvent.mockResolvedValue([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
+    mockRespondToMessage.mockRejectedValueOnce(new Error('bot failure'))
+    mockServiceFrom.mockReturnValue({
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }),
+    })
+
+    // Capture the promise from waitUntil so we can await it
+    let capturedPromise: Promise<unknown> | null = null
+    const { waitUntil } = await import('@vercel/functions')
+    vi.mocked(waitUntil).mockImplementationOnce((p: Promise<unknown>) => {
+      capturedPromise = p
+    })
+
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    const payload = {
+      action: 'opened',
+      pull_request: { number: 1, title: 'Fix bug', user: { login: 'alice' }, merged: false },
+      repository: { name: 'my-repo' },
+      installation: { id: 123 },
+    }
+    const res = await POST(makeWebhookReq(payload, 'pull_request'))
+    expect(res.status).toBe(200)
+
+    // Await the background task — should not throw
+    await capturedPromise
+    // respondToMessage was called and threw, but it was caught
     expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID)
   })
 
