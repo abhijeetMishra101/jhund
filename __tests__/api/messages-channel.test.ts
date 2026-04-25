@@ -85,7 +85,7 @@ describe('GET /api/messages/[channelId]', () => {
 
     const req = new Request(`http://localhost/api/messages/${CHANNEL_ID}`)
     await GET(req, { params: { channelId: CHANNEL_ID } })
-    expect(orderArg?.ascending).toBe(true)
+    expect((orderArg as { ascending: boolean } | null)?.ascending).toBe(true)
   })
 
   it('returns 401 when unauthenticated', async () => {

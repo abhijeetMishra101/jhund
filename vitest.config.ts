@@ -6,9 +6,6 @@ export default defineConfig({
   plugins: [react(), tsconfigPaths()],
   test: {
     environment: 'node',
-    environmentMatchGlobs: [
-      ['__tests__/components/**', 'jsdom'],
-    ],
     globals: true,
     coverage: {
       provider: 'v8',

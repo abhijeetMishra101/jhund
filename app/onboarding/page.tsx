@@ -68,7 +68,7 @@ export default function OnboardingPage() {
         {/* Step 1: Company name */}
         {step === 1 && (
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-1">What's your company called?</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-1">What&apos;s your company called?</h2>
             <p className="text-sm text-gray-500 mb-6">This is how your team will refer to your workspace.</p>
             <input
               type="text"
@@ -202,7 +202,7 @@ export default function OnboardingPage() {
                     <span className="text-xs text-gray-400">Ops</span>
                   </div>
                   <p className="text-sm text-gray-700">
-                    Hey! I'm Riley, your Ops teammate. I'm here to keep things running smoothly — routing your questions to the right person, flagging anything urgent, and making sure your team stays on track. What are you working on today?
+                    Hey! I&apos;m Riley, your Ops teammate. I&apos;m here to keep things running smoothly — routing your questions to the right person, flagging anything urgent, and making sure your team stays on track. What are you working on today?
                   </p>
                 </div>
               </div>
