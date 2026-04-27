@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 
 // ── Bot role definitions ────────────────────────────────────────────────────
 
-const BOT_ROLES = [
+export const BOT_ROLES = [
   {
     role_key: 'ops',
     display_name: 'Riley',
