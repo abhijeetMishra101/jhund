@@ -1,4 +1,5 @@
 import { App } from '@octokit/app'
+import { Octokit } from '@octokit/rest'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Json } from '@/lib/supabase/types'
 
@@ -39,7 +40,10 @@ export async function executePlanActions(planId: string, workspaceId: string): P
     privateKey: process.env.GITHUB_APP_PRIVATE_KEY!,
   })
 
-  const octokit = await app.getInstallationOctokit(Number(installation.installation_id))
+  // Get an installation token then use @octokit/rest which includes all REST endpoints
+  const installationOctokit = await app.getInstallationOctokit(Number(installation.installation_id))
+  const { token } = await installationOctokit.auth({ type: 'installation' }) as { token: string }
+  const octokit = new Octokit({ auth: token })
   const [owner, repo] = installation.repo_full_name.split('/')
 
   const actions = (plan.github_actions as Json[]).map((a) => a as unknown as GithubAction)
@@ -56,7 +60,7 @@ export async function executePlanActions(planId: string, workspaceId: string): P
 }
 
 async function executeAction(
-  octokit: any, // Octokit from @octokit/app lacks .rest typings
+  octokit: Octokit,
   owner: string,
   repo: string,
   action: GithubAction
