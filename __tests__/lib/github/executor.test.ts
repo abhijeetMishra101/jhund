@@ -15,12 +15,19 @@ vi.mock('@octokit/app', () => ({
 }))
 
 const mockOctokit = {
+  auth: vi.fn().mockResolvedValue({ token: 'test-token' }),
   rest: {
     issues: { create: mockIssuesCreate, createComment: mockIssuesCreateComment },
     pulls: { create: mockPullsCreate },
     git: { getRef: mockGitGetRef, createRef: mockGitCreateRef },
   },
 }
+
+vi.mock('@octokit/rest', () => ({
+  Octokit: class MockOctokit {
+    rest = mockOctokit.rest
+  },
+}))
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
 const mockServiceFrom = vi.hoisted(() => vi.fn())
