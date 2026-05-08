@@ -99,12 +99,13 @@ describe('GET /api/github/callback', () => {
     expect(mockListRepos).toHaveBeenCalledWith({ per_page: 1 })
   })
 
-  it('redirects to workspace with github_connected=1 on success', async () => {
+  it('redirects to onboarding with github_connected=1 and workspace slug on success', async () => {
     const { GET } = await import('@/app/api/github/callback/route')
     const res = await GET(makeRequest({ installation_id: INSTALLATION_ID, state: STATE }))
     const location = res.headers.get('location') ?? ''
-    expect(location).toContain('/w/acme')
+    expect(location).toContain('/onboarding')
     expect(location).toContain('github_connected=1')
+    expect(location).toContain('workspace=acme')
   })
 
   it('falls back to pending when no repos are accessible', async () => {
