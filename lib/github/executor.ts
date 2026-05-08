@@ -53,8 +53,7 @@ export async function executePlanActions(planId: string, workspaceId: string): P
     const status = (err as { status?: number }).status
     const message = githubErrorMessage(status)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('plans').update({ status: 'failed', error_message: message } as any).eq('id', planId)
+    await supabase.from('plans').update({ status: 'failed', error_message: message } as never).eq('id', planId)
 
     if (plan.channel_id) {
       await supabase.from('messages').insert({
