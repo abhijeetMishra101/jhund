@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useSearchParams } from 'next/navigation'
 
 type Template = 'startup' | 'enterprise' | 'blank'
 type WorkingStyle = 'hands-off' | 'balanced' | 'hands-on'
@@ -20,19 +19,18 @@ const WORKING_STYLES: { value: WorkingStyle; label: string; description: string 
 ]
 
 function OnboardingContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const githubError = searchParams.get('github_error') === '1'
   const githubConnected = searchParams.get('github_connected') === '1'
-  const workspaceSlug = searchParams.get('workspace') ?? ''
   const [step, setStep] = useState(githubConnected ? 4 : 1)
   const [companyName, setCompanyName] = useState('')
   const [template, setTemplate] = useState<Template>('startup')
   const [workingStyle, setWorkingStyle] = useState<WorkingStyle>('balanced')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [slug, setSlug] = useState(searchParams.get('workspace') ?? '')
 
-  async function finish() {
+  async function createWorkspace() {
     setLoading(true)
     setError('')
     try {
@@ -46,9 +44,11 @@ function OnboardingContent() {
         throw new Error(data.error ?? 'Setup failed')
       }
       const data = await res.json()
-      router.push(`/w/${data.workspace.slug}`)
+      setSlug(data.workspace.slug)
+      setStep(4)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
       setLoading(false)
     }
   }
@@ -146,12 +146,17 @@ function OnboardingContent() {
                 </button>
               ))}
             </div>
+            {error && <p className="text-sm text-red-600 mt-4">{error}</p>}
             <div className="flex gap-3 mt-6">
               <button onClick={() => setStep(2)} className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
                 Back
               </button>
-              <button onClick={() => setStep(4)} className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">
-                Continue
+              <button
+                onClick={createWorkspace}
+                disabled={loading}
+                className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {loading ? 'Setting up…' : 'Continue'}
               </button>
             </div>
           </div>
@@ -205,10 +210,7 @@ function OnboardingContent() {
               </p>
             )}
 
-            <div className="flex gap-3">
-              <button onClick={() => setStep(3)} className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                Back
-              </button>
+            <div className="flex justify-end">
               <button onClick={() => setStep(5)} className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">
                 {githubConnected ? 'Continue' : 'Skip for now'}
               </button>
@@ -239,23 +241,12 @@ function OnboardingContent() {
                 </div>
               </div>
             </div>
-            {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
-            {workspaceSlug ? (
-              <a
-                href={`/w/${workspaceSlug}`}
-                className="block w-full text-center py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                Go to my workspace →
-              </a>
-            ) : (
-              <button
-                onClick={finish}
-                disabled={loading}
-                className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                {loading ? 'Setting up your workspace…' : 'Go to my workspace →'}
-              </button>
-            )}
+            <a
+              href={`/w/${slug}`}
+              className="block w-full text-center py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Go to my workspace →
+            </a>
           </div>
         )}
       </div>
