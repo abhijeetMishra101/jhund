@@ -68,12 +68,11 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
         setMessages((prev) => prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg])
         if (newMsg.author_type === 'bot') {
           setWaitingForBot(false)
-          setActionsUsed((n) => Math.min(n + 1, actionCap))
         }
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [activeChannelId, actionCap])
+  }, [activeChannelId])
 
   // Background refresh every 5 s — catches webhook-triggered messages
   useEffect(() => {
@@ -87,6 +86,17 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     return () => clearInterval(interval)
   }, [activeChannelId])
 
+  // Sync action counter from server every 10 s — reflects GitHub executions
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetch('/api/workspace')
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data?.actionCounter) setActionsUsed(data.actionCounter.used) })
+        .catch(() => {})
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Polling fallback after user sends — stops on first bot reply
   useEffect(() => {
     if (!waitingForBot || !activeChannelId) return
@@ -98,12 +108,11 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
       if (last?.author_type === 'bot') {
         setMessages(data)
         setWaitingForBot(false)
-        setActionsUsed((n) => Math.min(n + 1, actionCap))
       }
     }
     pollRef.current = setInterval(poll, POLL_INTERVAL_MS)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [waitingForBot, activeChannelId, actionCap])
+  }, [waitingForBot, activeChannelId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -130,19 +139,6 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
         body: JSON.stringify({ channelId: activeChannelId, content }),
       })
 
-      if (res.status === 402) {
-        setMessages((prev) => [
-          ...prev.filter((m) => m.id !== optimisticId),
-          {
-            id: `sys-${Date.now()}`, channel_id: activeChannelId,
-            author_type: 'system', author_id: '',
-            content: 'Your team has used all their actions for this period. Upgrade to continue.',
-            plan_id: null, created_at: new Date().toISOString(),
-          },
-        ])
-        return
-      }
-
       if (!res.ok) {
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
         return
@@ -153,6 +149,15 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
       setWaitingForBot(true)
     } finally {
       setSending(false)
+    }
+  }
+
+  const resetActionCap = async () => {
+    if (!confirm('Reset the action counter to zero?')) return
+    const res = await fetch('/api/workspace/reset-cap', { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()
+      setActionsUsed(data.actions_used)
     }
   }
 
@@ -175,15 +180,27 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
             # {activeChannel?.display_name ?? ''}
           </h2>
           <div className="flex-1" />
-          <span
-            className="text-xs font-medium px-2 py-1 rounded"
-            style={{
-              backgroundColor: pctUsed >= 80 ? '#fef3c7' : '#f3f4f6',
-              color: pctUsed >= 80 ? '#92400e' : '#6b7280',
-            }}
-          >
-            {actionsUsed} / {actionCap} actions used
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className="text-xs font-medium px-2 py-1 rounded"
+              style={{
+                backgroundColor: pctUsed >= 80 ? '#fef3c7' : '#f3f4f6',
+                color: pctUsed >= 80 ? '#92400e' : '#6b7280',
+              }}
+            >
+              {actionsUsed} / {actionCap} actions used
+            </span>
+            {pctUsed >= 80 && (
+              <button
+                onClick={resetActionCap}
+                className="text-xs px-2 py-1 rounded font-medium"
+                style={{ backgroundColor: '#e8a838', color: '#fff' }}
+                data-testid="reset-cap-button"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </header>
 
         <MessageThread

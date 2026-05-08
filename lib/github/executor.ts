@@ -3,6 +3,13 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { getInstallationOctokit } from '@/lib/github/auth'
 import type { Json } from '@/lib/supabase/types'
 
+export class ActionCapExceededError extends Error {
+  constructor() {
+    super('Your team has used all their GitHub actions for this period. Reset the counter to continue.')
+    this.name = 'ActionCapExceededError'
+  }
+}
+
 interface GithubAction {
   action_type: 'create_pr' | 'create_issue' | 'comment_pr' | 'comment_issue'
   payload: Record<string, unknown>
@@ -37,6 +44,31 @@ export async function executePlanActions(planId: string, workspaceId: string): P
 
   if (!installation.repo_full_name || installation.repo_full_name === 'pending') {
     throw new Error('GitHub repo not yet connected. Go to Settings → Integrations to connect your repository.')
+  }
+
+  // Enforce action cap atomically — only GitHub execution counts against budget
+  const { data: allowed } = await supabase.rpc('increment_action_count', {
+    p_workspace_id: workspaceId,
+  })
+  if (!allowed) throw new ActionCapExceededError()
+
+  // Post 80% warning once when crossing the threshold
+  const { data: ws } = await supabase
+    .from('workspaces')
+    .select('actions_used, action_cap')
+    .eq('id', workspaceId)
+    .single()
+
+  if (ws) {
+    const pct = ws.actions_used / ws.action_cap
+    if (pct >= 0.8 && pct < 0.9) {
+      await supabase.from('messages').insert({
+        channel_id: plan.channel_id,
+        author_type: 'system',
+        author_id: workspaceId,
+        content: `⚠️ You've used ${Math.round(pct * 100)}% of your monthly action budget. Reset the counter in the workspace header to keep shipping.`,
+      })
+    }
   }
 
   const octokit = await getInstallationOctokit(Number(installation.installation_id))

@@ -177,25 +177,7 @@ describe('WorkspaceShell — sendMessage', () => {
     await waitFor(() => expect(screen.getByText('hello')).toBeInTheDocument())
   })
 
-  it('shows action-cap-exceeded system message on 402', async () => {
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response)
-      .mockResolvedValueOnce({ ok: false, status: 402, json: async () => ({}) } as Response)
-
-    renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
-
-    await userEvent.type(screen.getByRole('textbox'), 'over limit')
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }))
-
-    await waitFor(() =>
-      expect(screen.getByText(/used all their actions/)).toBeInTheDocument()
-    )
-    // Optimistic message removed
-    expect(screen.queryByText('over limit')).not.toBeInTheDocument()
-  })
-
-  it('removes optimistic message on any non-ok, non-402 response', async () => {
+  it('removes optimistic message on non-ok response (e.g. 500)', async () => {
     global.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response)
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) } as Response)
@@ -252,7 +234,7 @@ describe('WorkspaceShell — Supabase Realtime push', () => {
     expect(screen.getAllByText('Already here')).toHaveLength(1)
   })
 
-  it('increments action counter when a bot message arrives via Realtime', async () => {
+  it('does NOT increment action counter when a bot message arrives via Realtime', async () => {
     stubFetch([])
     renderShell()
     await waitFor(() => expect(mockOn).toHaveBeenCalled())
@@ -264,7 +246,9 @@ describe('WorkspaceShell — Supabase Realtime push', () => {
       callback!({ new: makeMsg({ id: 'bot-msg', author_type: 'bot' }) })
     })
 
-    expect(screen.getByText('11 / 50 actions used')).toBeInTheDocument()
+    // Counter stays at 10 — only GitHub action execution increments it
+    expect(screen.getByText('10 / 50 actions used')).toBeInTheDocument()
+    expect(screen.queryByText('11 / 50 actions used')).not.toBeInTheDocument()
   })
 })
 
@@ -291,6 +275,28 @@ describe('WorkspaceShell — background poll (every 5s)', () => {
 
     expect(vi.mocked(global.fetch).mock.calls.length).toBeGreaterThan(callsBefore)
   })
+
+  it('syncs action counter from /api/workspace every 10 seconds', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/workspace') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ actionCounter: { used: 30, cap: 50 } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => [] } as Response)
+    })
+    global.fetch = fetchMock
+
+    renderShell()
+    await act(async () => { await Promise.resolve() }) // flush initial fetch
+
+    expect(screen.getByText('10 / 50 actions used')).toBeInTheDocument()
+
+    await act(async () => { vi.advanceTimersByTime(10000) })
+    await act(async () => { await Promise.resolve() })
+    await act(async () => { await Promise.resolve() }) // flush promise chain
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/workspace')
+    expect(screen.getByText('30 / 50 actions used')).toBeInTheDocument()
+  }, 10000)
 })
 
 describe('WorkspaceShell — polling fallback (waitingForBot)', () => {
@@ -323,5 +329,44 @@ describe('WorkspaceShell — polling fallback (waitingForBot)', () => {
     await act(async () => { await Promise.resolve() }) // flush poll fetch
 
     expect(screen.getByText('Done!')).toBeInTheDocument()
+  })
+})
+
+describe('WorkspaceShell — reset action cap', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('shows Reset button when actions are at or above 80%', async () => {
+    const highUsageWorkspace = { ...WORKSPACE, actions_used: 40, action_cap: 50 } // 80%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={highUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(screen.getByTestId('reset-cap-button')).toBeInTheDocument())
+  })
+
+  it('does NOT show Reset button when below 80%', async () => {
+    const lowUsageWorkspace = { ...WORKSPACE, actions_used: 30, action_cap: 50 } // 60%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={lowUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    expect(screen.queryByTestId('reset-cap-button')).not.toBeInTheDocument()
+  })
+
+  it('calls reset-cap API and updates counter on confirm', async () => {
+    const highUsageWorkspace = { ...WORKSPACE, actions_used: 40, action_cap: 50 }
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response) // initial load
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, actions_used: 0, action_cap: 50 }) } as Response) // reset-cap POST
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<WorkspaceShell workspace={highUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(screen.getByTestId('reset-cap-button')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('reset-cap-button'))
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/workspace/reset-cap', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(screen.getByText('0 / 50 actions used')).toBeInTheDocument())
   })
 })
