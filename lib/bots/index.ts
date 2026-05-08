@@ -32,7 +32,21 @@ const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
       },
       payload: {
         type: 'object',
-        description: 'Action-specific fields (title, body, branch name, etc.)',
+        description:
+          'Action-specific fields. Required fields per action_type:\n' +
+          '- comment_pr: { pr_number: <integer>, body: <string> }\n' +
+          '- comment_issue: { issue_number: <integer>, body: <string> }\n' +
+          '- create_issue: { title: <string>, body: <string>, labels: <string[]> }\n' +
+          '- create_pr: { title: <string>, body: <string>, head_branch: <string>, base_branch: <string> }',
+        properties: {
+          pr_number: { type: 'integer', description: 'PR number to comment on (comment_pr only)' },
+          issue_number: { type: 'integer', description: 'Issue number to comment on (comment_issue only)' },
+          body: { type: 'string', description: 'Comment or PR/issue body text' },
+          title: { type: 'string', description: 'Title for new PR or issue' },
+          labels: { type: 'array', items: { type: 'string' }, description: 'Labels for new issue' },
+          head_branch: { type: 'string', description: 'Branch to merge from (create_pr only)' },
+          base_branch: { type: 'string', description: 'Branch to merge into, usually main (create_pr only)' },
+        },
       },
     },
     required: ['action_type', 'plain_english_description', 'payload'],
