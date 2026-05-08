@@ -1,6 +1,6 @@
-import { App } from '@octokit/app'
 import { Octokit } from '@octokit/rest'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getInstallationOctokit } from '@/lib/github/auth'
 import type { Json } from '@/lib/supabase/types'
 
 interface GithubAction {
@@ -35,15 +35,7 @@ export async function executePlanActions(planId: string, workspaceId: string): P
     throw new Error('No GitHub installation linked to this workspace')
   }
 
-  const app = new App({
-    appId: process.env.GITHUB_APP_ID!,
-    privateKey: process.env.GITHUB_APP_PRIVATE_KEY!,
-  })
-
-  // Get an installation token then use @octokit/rest which includes all REST endpoints
-  const installationOctokit = await app.getInstallationOctokit(Number(installation.installation_id))
-  const { token } = await installationOctokit.auth({ type: 'installation' }) as { token: string }
-  const octokit = new Octokit({ auth: token })
+  const octokit = await getInstallationOctokit(Number(installation.installation_id))
   const [owner, repo] = installation.repo_full_name.split('/')
 
   const actions = (plan.github_actions as Json[]).map((a) => a as unknown as GithubAction)

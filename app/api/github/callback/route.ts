@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getInstallationOctokit } from '@/lib/github/auth'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -38,14 +39,20 @@ export async function GET(request: Request) {
 
     if (!userRow) return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
 
-    // Upsert the installation row
+    // Resolve repos accessible to this installation via GitHub API
+    const octokit = await getInstallationOctokit(Number(installationId))
+    const { data: reposData } = await octokit.rest.apps.listReposAccessibleToInstallation({ per_page: 1 })
+    const firstRepo = reposData.repositories[0]
+    const repoFullName = firstRepo?.full_name ?? 'pending'
+
+    // Upsert the installation row with the resolved repo name
     await serviceClient
       .from('github_installations')
       .upsert(
         {
           workspace_id: userRow.workspace_id,
           installation_id: installationId,
-          repo_full_name: 'pending',
+          repo_full_name: repoFullName,
         },
         { onConflict: 'installation_id' }
       )
