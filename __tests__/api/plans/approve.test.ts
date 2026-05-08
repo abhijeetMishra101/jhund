@@ -170,12 +170,13 @@ describe('POST /api/plans/[id]/approve', () => {
     // Wait for the background task to complete (catch path)
     await capturedPromise
 
-    // The catch handler should have updated the plan to 'failed'
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
-    // And inserted a failure message
+    // The catch handler posts a ⚠️ system message with the plain-English error
     expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.stringContaining('GitHub API error'),
+      author_type: 'system',
     }))
+    // The approve route no longer updates plan status — executor owns that
+    expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
   })
 
   it('returns 401 when unauthenticated', async () => {

@@ -35,6 +35,10 @@ export async function executePlanActions(planId: string, workspaceId: string): P
     throw new Error('No GitHub installation linked to this workspace')
   }
 
+  if (!installation.repo_full_name || installation.repo_full_name === 'pending') {
+    throw new Error('GitHub repo not yet connected. Go to Settings → Integrations to connect your repository.')
+  }
+
   const octokit = await getInstallationOctokit(Number(installation.installation_id))
   const [owner, repo] = installation.repo_full_name.split('/')
 
@@ -52,17 +56,9 @@ export async function executePlanActions(planId: string, workspaceId: string): P
   } catch (err) {
     const status = (err as { status?: number }).status
     const message = githubErrorMessage(status)
-
     await supabase.from('plans').update({ status: 'failed', error_message: message } as never).eq('id', planId)
-
-    if (plan.channel_id) {
-      await supabase.from('messages').insert({
-        channel_id: plan.channel_id,
-        author_type: 'system',
-        author_id: workspaceId,
-        content: `⚠️ ${message}`,
-      })
-    }
+    // Rethrow with plain-English message so the approve route can post the channel notification
+    throw new Error(message)
   }
 }
 
