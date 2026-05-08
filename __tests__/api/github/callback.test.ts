@@ -29,6 +29,10 @@ vi.mock('@/lib/github/auth', () => ({
   }),
 }))
 
+vi.mock('@/lib/github/triggers', () => ({
+  seedDefaultTriggers: vi.fn().mockResolvedValue(undefined),
+}))
+
 const USER = { id: 'user-1' }
 const WORKSPACE_ID = 'ws-uuid'
 const INSTALLATION_ID = '126817959'

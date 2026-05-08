@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getInstallationOctokit } from '@/lib/github/auth'
+import { seedDefaultTriggers } from '@/lib/github/triggers'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -56,6 +57,9 @@ export async function GET(request: Request) {
         },
         { onConflict: 'installation_id' }
       )
+
+    // Seed default trigger routing rules based on workspace template
+    await seedDefaultTriggers(userRow.workspace_id)
 
     // Get workspace slug for redirect
     const { data: workspace } = await serviceClient
