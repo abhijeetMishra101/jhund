@@ -137,6 +137,55 @@ describe('POST /api/webhooks/github', () => {
     expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID)
   })
 
+  it('routes check_run event → routeGithubEvent called with "check_run"', async () => {
+    mockRouteGithubEvent.mockResolvedValue([])
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    const payload = {
+      action: 'completed',
+      check_run: { name: 'Lint', conclusion: 'failure', check_suite: { head_branch: 'main' } },
+      repository: { full_name: 'owner/my-repo' },
+      installation: { id: 123 },
+    }
+    const res = await POST(makeWebhookReq(payload, 'check_run'))
+    expect(res.status).toBe(200)
+    expect(mockRouteGithubEvent).toHaveBeenCalledWith(
+      expect.any(String),
+      'check_run',
+      expect.any(Array)
+    )
+  })
+
+  it('routes release event → routeGithubEvent called with "release"', async () => {
+    mockRouteGithubEvent.mockResolvedValue([])
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    const payload = {
+      action: 'published',
+      release: { tag_name: 'v1.0.0' },
+      repository: { full_name: 'owner/my-repo' },
+      installation: { id: 123 },
+    }
+    const res = await POST(makeWebhookReq(payload, 'release'))
+    expect(res.status).toBe(200)
+    expect(mockRouteGithubEvent).toHaveBeenCalledWith(
+      expect.any(String),
+      'release',
+      expect.any(Array)
+    )
+  })
+
+  it('returns 401 for check_run with invalid signature', async () => {
+    mockVerify.mockReturnValue(false)
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    const payload = {
+      action: 'completed',
+      check_run: { name: 'Lint', conclusion: 'failure', check_suite: { head_branch: 'main' } },
+      repository: { full_name: 'owner/my-repo' },
+      installation: { id: 123 },
+    }
+    const res = await POST(makeWebhookReq(payload, 'check_run', false))
+    expect(res.status).toBe(401)
+  })
+
   it('skips respondToMessage when message insert returns null', async () => {
     mockRouteGithubEvent.mockResolvedValue([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
     mockServiceFrom.mockReturnValue({

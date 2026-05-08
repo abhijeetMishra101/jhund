@@ -13,11 +13,15 @@ const DEFAULT_TRIGGERS: Record<
     { channelName: 'engineering', eventType: 'pull_request' },
     { channelName: 'engineering', eventType: 'issues', labelFilter: 'bug' },
     { channelName: 'security',    eventType: 'issues', labelFilter: 'security' },
+    { channelName: 'engineering', eventType: 'check_run' },
+    { channelName: 'ops',         eventType: 'release' },
   ],
   enterprise: [
     { channelName: 'engineering', eventType: 'pull_request' },
     { channelName: 'engineering', eventType: 'issues', labelFilter: 'bug' },
     { channelName: 'security',    eventType: 'issues', labelFilter: 'security' },
+    { channelName: 'engineering', eventType: 'check_run' },
+    { channelName: 'ops',         eventType: 'release' },
   ],
   blank: [],
 }

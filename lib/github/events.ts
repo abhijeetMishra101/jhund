@@ -72,6 +72,27 @@ export function summariseEvent(eventType: string, payload: Record<string, unknow
       return ''
     }
 
+    case 'check_run': {
+      const checkRun = payload.check_run as Record<string, unknown>
+      const name = checkRun?.name as string
+      const conclusion = checkRun?.conclusion as string
+      const branch = (checkRun?.check_suite as Record<string, unknown>)?.head_branch as string
+      const repo = (payload.repository as Record<string, unknown>)?.full_name as string
+      const failed = ['failure', 'cancelled', 'timed_out', 'action_required'].includes(conclusion)
+      if (failed) return `CI check "${name}" failed on branch "${branch}" in ${repo}`
+      if (conclusion === 'success') return `CI check "${name}" passed on branch "${branch}" in ${repo}`
+      return `CI check "${name}" completed on branch "${branch}" in ${repo}`
+    }
+
+    case 'release': {
+      const action = payload.action as string
+      const release = payload.release as Record<string, unknown>
+      const tagName = release?.tag_name as string
+      const repo = (payload.repository as Record<string, unknown>)?.full_name as string
+      if (action === 'published') return `Version ${tagName} was released in ${repo}`
+      return `A release event occurred in ${repo}`
+    }
+
     default:
       return ''
   }

@@ -18,7 +18,7 @@ export async function executePlanActions(planId: string, workspaceId: string): P
   // Fetch plan + its actions
   const { data: plan, error: planError } = await supabase
     .from('plans')
-    .select('github_actions')
+    .select('github_actions, channel_id')
     .eq('id', planId)
     .single()
 
@@ -40,15 +40,37 @@ export async function executePlanActions(planId: string, workspaceId: string): P
 
   const actions = (plan.github_actions as Json[]).map((a) => a as unknown as GithubAction)
 
-  for (const action of actions) {
-    await executeAction(octokit, owner, repo, action)
-  }
+  try {
+    for (const action of actions) {
+      await executeAction(octokit, owner, repo, action)
+    }
 
-  // Mark plan as executed
-  await supabase
-    .from('plans')
-    .update({ status: 'executed', executed_at: new Date().toISOString() })
-    .eq('id', planId)
+    await supabase
+      .from('plans')
+      .update({ status: 'executed', executed_at: new Date().toISOString() })
+      .eq('id', planId)
+  } catch (err) {
+    const status = (err as { status?: number }).status
+    const message = githubErrorMessage(status)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await supabase.from('plans').update({ status: 'failed', error_message: message } as any).eq('id', planId)
+
+    if (plan.channel_id) {
+      await supabase.from('messages').insert({
+        channel_id: plan.channel_id,
+        author_type: 'system',
+        author_id: workspaceId,
+        content: `⚠️ ${message}`,
+      })
+    }
+  }
+}
+
+function githubErrorMessage(status: number | undefined): string {
+  if (status === 403) return "GitHub didn't allow the action. Check that the Clan App has the right permissions on your repo."
+  if (status === 404) return "The branch or file couldn't be found on GitHub. It may have been deleted."
+  return "Something went wrong on GitHub's side. Try again in a minute."
 }
 
 async function executeAction(

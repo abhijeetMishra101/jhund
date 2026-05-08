@@ -132,6 +132,62 @@ describe('summariseEvent — installation', () => {
   })
 })
 
+describe('summariseEvent — check_run', () => {
+  const base = {
+    check_run: { name: 'Lint', conclusion: 'failure', check_suite: { head_branch: 'main' } },
+    repository: { full_name: 'owner/my-repo' },
+  }
+
+  it('conclusion:failure → contains "failed"', () => {
+    const out = summariseEvent('check_run', { ...base, action: 'completed' })
+    expect(out).toContain('failed')
+    expect(out).toContain('Lint')
+    expect(out).toContain('main')
+  })
+
+  it('conclusion:cancelled → treated as failure', () => {
+    const payload = { ...base, check_run: { ...base.check_run, conclusion: 'cancelled' }, action: 'completed' }
+    expect(summariseEvent('check_run', payload)).toContain('failed')
+  })
+
+  it('conclusion:timed_out → treated as failure', () => {
+    const payload = { ...base, check_run: { ...base.check_run, conclusion: 'timed_out' }, action: 'completed' }
+    expect(summariseEvent('check_run', payload)).toContain('failed')
+  })
+
+  it('conclusion:success → contains "passed"', () => {
+    const payload = { ...base, check_run: { ...base.check_run, conclusion: 'success' }, action: 'completed' }
+    expect(summariseEvent('check_run', payload)).toContain('passed')
+  })
+
+  it('other conclusion → generic completed string', () => {
+    const payload = { ...base, check_run: { ...base.check_run, conclusion: 'neutral' }, action: 'completed' }
+    const out = summariseEvent('check_run', payload)
+    expect(out).toContain('completed')
+    expect(out).not.toContain('failed')
+    expect(out).not.toContain('passed')
+  })
+})
+
+describe('summariseEvent — release', () => {
+  const base = {
+    release: { tag_name: 'v1.2.3' },
+    repository: { full_name: 'owner/my-repo' },
+  }
+
+  it('action:published → contains tag name and "released"', () => {
+    const out = summariseEvent('release', { ...base, action: 'published' })
+    expect(out).toContain('v1.2.3')
+    expect(out).toContain('released')
+  })
+
+  it('other actions → fallback string, no crash', () => {
+    const out = summariseEvent('release', { ...base, action: 'deleted' })
+    expect(out).toContain('release event')
+    expect(out).toContain('owner/my-repo')
+  })
+})
+
 describe('summariseEvent — unknown event', () => {
   it('returns empty string', () => {
     expect(summariseEvent('workflow_run', {})).toBe('')
@@ -159,5 +215,13 @@ describe('extractLabels', () => {
 
   it('returns empty array when no issue or pr', () => {
     expect(extractLabels({})).toEqual([])
+  })
+
+  it('returns empty array for check_run payload (no labels concept)', () => {
+    const payload = {
+      check_run: { name: 'Lint', conclusion: 'failure', check_suite: { head_branch: 'main' } },
+      repository: { full_name: 'owner/repo' },
+    }
+    expect(extractLabels(payload)).toEqual([])
   })
 })
