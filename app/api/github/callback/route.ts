@@ -1,0 +1,66 @@
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const installationId = searchParams.get('installation_id')
+  const state = searchParams.get('state')
+
+  const cookieStore = await cookies()
+  const storedState = cookieStore.get('github_oauth_state')?.value
+
+  // Validate CSRF state
+  if (!state || !storedState || state !== storedState) {
+    return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
+  }
+
+  if (!installationId) {
+    return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
+  }
+
+  // Clear state cookie
+  cookieStore.delete('github_oauth_state')
+
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.redirect(new URL('/auth/login', request.url))
+
+    const serviceClient = createServiceClient()
+
+    // Get user's workspace
+    const { data: userRow } = await serviceClient
+      .from('users')
+      .select('workspace_id')
+      .eq('id', user.id)
+      .single()
+
+    if (!userRow) return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
+
+    // Upsert the installation row
+    await serviceClient
+      .from('github_installations')
+      .upsert(
+        {
+          workspace_id: userRow.workspace_id,
+          installation_id: installationId,
+          repo_full_name: 'pending',
+        },
+        { onConflict: 'installation_id' }
+      )
+
+    // Get workspace slug for redirect
+    const { data: workspace } = await serviceClient
+      .from('workspaces')
+      .select('slug')
+      .eq('id', userRow.workspace_id)
+      .single()
+
+    if (!workspace) return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
+
+    return NextResponse.redirect(new URL(`/w/${workspace.slug}?github_connected=1`, request.url))
+  } catch {
+    return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
+  }
+}
