@@ -21,9 +21,10 @@ vi.mock('@/lib/github/auth', () => ({
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
 const mockServiceFrom = vi.hoisted(() => vi.fn())
+const mockRpc = vi.hoisted(() => vi.fn().mockResolvedValue({ data: true, error: null }))
 
 vi.mock('@/lib/supabase/server', () => ({
-  createServiceClient: vi.fn().mockReturnValue({ from: mockServiceFrom }),
+  createServiceClient: vi.fn().mockReturnValue({ from: mockServiceFrom, rpc: mockRpc }),
 }))
 
 const PLAN_ID = 'plan-uuid'
@@ -57,9 +58,18 @@ function updateChain() {
   }
 }
 
+function workspaceChain(actionsUsed = 10, actionCap = 50) {
+  return {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data: { actions_used: actionsUsed, action_cap: actionCap }, error: null }),
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockServiceFrom.mockReset()
+  mockRpc.mockResolvedValue({ data: true, error: null })
 })
 
 describe('executePlanActions', () => {
@@ -90,6 +100,7 @@ describe('executePlanActions', () => {
     mockServiceFrom
       .mockReturnValueOnce(planChain(actions))
       .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
       .mockReturnValueOnce(updateChain()) // status update
 
     const { executePlanActions } = await import('@/lib/github/executor')
@@ -109,6 +120,7 @@ describe('executePlanActions', () => {
     mockServiceFrom
       .mockReturnValueOnce(planChain(actions))
       .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
       .mockReturnValueOnce(updateChain())
 
     const { executePlanActions } = await import('@/lib/github/executor')
@@ -124,6 +136,7 @@ describe('executePlanActions', () => {
     mockServiceFrom
       .mockReturnValueOnce(planChain(actions))
       .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
       .mockReturnValueOnce(updateChain())
 
     const { executePlanActions } = await import('@/lib/github/executor')
@@ -142,6 +155,7 @@ describe('executePlanActions', () => {
     mockServiceFrom
       .mockReturnValueOnce(planChain(actions))
       .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
       .mockReturnValueOnce(updateChain())
 
     const { executePlanActions } = await import('@/lib/github/executor')
@@ -158,6 +172,7 @@ describe('executePlanActions', () => {
     mockServiceFrom
       .mockReturnValueOnce(planChain(actions))
       .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
       .mockReturnValueOnce(updateChain())
 
     const { executePlanActions } = await import('@/lib/github/executor')
@@ -178,6 +193,7 @@ describe('executePlanActions', () => {
     mockServiceFrom
       .mockReturnValueOnce(planChain(actions))
       .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
       .mockReturnValueOnce(updateChain())
 
     const { executePlanActions } = await import('@/lib/github/executor')
@@ -200,6 +216,7 @@ describe('executePlanActions', () => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate, select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null, error: null }) }
     })
 
@@ -221,6 +238,7 @@ describe('executePlanActions', () => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions, 'ch-test'), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate }
     })
 
@@ -241,12 +259,91 @@ describe('executePlanActions', () => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate }
     })
 
     const { executePlanActions } = await import('@/lib/github/executor')
     await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow("couldn't be found")
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
+  })
+
+  it('throws ActionCapExceededError when increment_action_count returns false', async () => {
+    mockRpc.mockResolvedValueOnce({ data: false, error: null })
+    mockServiceFrom
+      .mockReturnValueOnce(planChain([]))
+      .mockReturnValueOnce(installationChain())
+    const { executePlanActions, ActionCapExceededError } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow(ActionCapExceededError)
+  })
+
+  it('posts 80% warning system message when actions_used/action_cap is in 80-89% band', async () => {
+    const actions = [{ action_type: 'create_issue', payload: { title: 'Test', body: '', labels: [] } }]
+    const mockInsert = vi.fn().mockResolvedValue({ data: null, error: null })
+
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions, 'ch-test'))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain(40, 50)) // 80% exactly
+      .mockReturnValue({
+        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) }),
+        insert: mockInsert,
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      })
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      author_type: 'system',
+      content: expect.stringContaining('80%'),
+    }))
+  })
+
+  it('does NOT post 80% warning when below 80%', async () => {
+    const actions = [{ action_type: 'create_issue', payload: { title: 'Test', body: '', labels: [] } }]
+    const mockInsert = vi.fn().mockResolvedValue({ data: null, error: null })
+
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain(30, 50)) // 60%
+      .mockReturnValue({
+        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) }),
+        insert: mockInsert,
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      })
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  it('does NOT post 80% warning when at 90% or above (to avoid spam)', async () => {
+    const actions = [{ action_type: 'create_issue', payload: { title: 'Test', body: '', labels: [] } }]
+    const mockInsert = vi.fn().mockResolvedValue({ data: null, error: null })
+
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain(45, 50)) // 90%
+      .mockReturnValue({
+        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) }),
+        insert: mockInsert,
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      })
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockInsert).not.toHaveBeenCalled()
   })
 
   it('throws when repo_full_name is pending', async () => {
@@ -272,6 +369,7 @@ describe('executePlanActions', () => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate }
     })
 

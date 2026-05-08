@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── vi.hoisted: variables referenced inside vi.mock factories ────────────────
 const mockMessagesCreate = vi.hoisted(() => vi.fn())
-const mockRpc = vi.hoisted(() => vi.fn())
 const mockServiceFrom = vi.hoisted(() => vi.fn())
+const mockRpc = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -57,7 +57,6 @@ function chain(result: { data: unknown; error: unknown }) {
 describe('respondToMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRpc.mockResolvedValue({ data: true, error: null })
   })
 
   it('stores a plain-text reply and returns message id', async () => {
@@ -181,15 +180,19 @@ describe('respondToMessage', () => {
     expect(insertedMsg!.content).toContain('Open bug report')
   })
 
-  it('throws ActionCapExceededError when cap is hit (does not call Claude)', async () => {
+  it('does NOT call increment_action_count — chat is free regardless of cap', async () => {
     mockServiceFrom
       .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
       .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
-    mockRpc.mockResolvedValue({ data: false, error: null })
+      .mockReturnValueOnce(chain({ data: { id: 'msg-uuid' }, error: null }))
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Hello!' }],
+      stop_reason: 'end_turn',
+    })
 
-    const { respondToMessage, ActionCapExceededError } = await import('@/lib/bots/index')
-    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow(ActionCapExceededError)
-    expect(mockMessagesCreate).not.toHaveBeenCalled()
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(mockRpc).not.toHaveBeenCalled()
   })
 
   it('throws when no bot is configured for the channel', async () => {
