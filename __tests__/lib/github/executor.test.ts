@@ -6,16 +6,8 @@ const mockIssuesCreateComment = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 const mockPullsCreate = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 const mockGitGetRef = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { object: { sha: 'abc123' } } }))
 const mockGitCreateRef = vi.hoisted(() => vi.fn().mockResolvedValue({}))
-const mockGetInstallationOctokit = vi.hoisted(() => vi.fn())
-
-vi.mock('@octokit/app', () => ({
-  App: class MockApp {
-    getInstallationOctokit = mockGetInstallationOctokit
-  },
-}))
 
 const mockOctokit = {
-  auth: vi.fn().mockResolvedValue({ token: 'test-token' }),
   rest: {
     issues: { create: mockIssuesCreate, createComment: mockIssuesCreateComment },
     pulls: { create: mockPullsCreate },
@@ -23,10 +15,8 @@ const mockOctokit = {
   },
 }
 
-vi.mock('@octokit/rest', () => ({
-  Octokit: class MockOctokit {
-    rest = mockOctokit.rest
-  },
+vi.mock('@/lib/github/auth', () => ({
+  getInstallationOctokit: vi.fn().mockResolvedValue(mockOctokit),
 }))
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
@@ -70,9 +60,6 @@ function updateChain() {
 beforeEach(() => {
   vi.clearAllMocks()
   mockServiceFrom.mockReset()
-  process.env.GITHUB_APP_ID = 'app-id'
-  process.env.GITHUB_APP_PRIVATE_KEY = 'private-key'
-  mockGetInstallationOctokit.mockResolvedValue(mockOctokit)
 })
 
 describe('executePlanActions', () => {
