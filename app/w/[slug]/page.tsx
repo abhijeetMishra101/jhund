@@ -33,6 +33,7 @@ export default async function WorkspacePage({ params }: Props) {
       .from('channels')
       .select()
       .eq('workspace_id', workspace.id)
+      .eq('archived', false)
       .order('position'),
     supabase
       .from('bot_roles')

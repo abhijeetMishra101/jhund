@@ -71,6 +71,7 @@ export type Database = {
           display_name: string
           bot_role_id: string | null
           position: number
+          archived: boolean
           created_at: string
         }
         Insert: {
@@ -80,6 +81,7 @@ export type Database = {
           display_name: string
           bot_role_id?: string | null
           position?: number
+          archived?: boolean
           created_at?: string
         }
         Update: {
@@ -89,6 +91,7 @@ export type Database = {
           display_name?: string
           bot_role_id?: string | null
           position?: number
+          archived?: boolean
           created_at?: string
         }
         Relationships: []

@@ -167,6 +167,7 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     <div className="flex h-screen overflow-hidden">
       <ChannelSidebar
         workspaceName={workspace.name}
+        workspaceSlug={workspace.slug}
         channels={channels}
         activeChannelId={activeChannelId}
         actionsUsed={actionsUsed}
