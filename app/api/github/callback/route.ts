@@ -70,7 +70,7 @@ export async function GET(request: Request) {
 
     if (!workspace) return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
 
-    return NextResponse.redirect(new URL(`/w/${workspace.slug}?github_connected=1`, request.url))
+    return NextResponse.redirect(new URL(`/onboarding?github_connected=1&workspace=${workspace.slug}`, request.url))
   } catch {
     return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
   }
