@@ -125,14 +125,6 @@ describe('POST /api/messages', () => {
     expect(res.status).toBe(404)
   })
 
-  it('returns 201 when respondToMessage throws ActionCapExceededError (error silently swallowed)', async () => {
-    setupAuthMocks()
-    const { respondToMessage, ActionCapExceededError } = await import('@/lib/bots')
-    vi.mocked(respondToMessage).mockRejectedValueOnce(new ActionCapExceededError())
-    const res = await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
-    expect(res.status).toBe(201)
-  })
-
   it('returns 201 when respondToMessage throws a generic error (error silently swallowed)', async () => {
     setupAuthMocks()
     const { respondToMessage } = await import('@/lib/bots')

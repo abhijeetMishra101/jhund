@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { respondToMessage, ActionCapExceededError } from '@/lib/bots'
+import { respondToMessage } from '@/lib/bots'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -61,7 +61,6 @@ export async function POST(request: Request) {
   // execution as soon as the response is sent without waitUntil)
   waitUntil(
     respondToMessage(channelId, userRow.workspace_id).catch((err: unknown) => {
-      if (err instanceof ActionCapExceededError) return
       console.error('[bot] respondToMessage failed:', err)
     })
   )
