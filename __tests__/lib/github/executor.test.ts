@@ -209,84 +209,73 @@ describe('executePlanActions', () => {
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'executed' }))
   })
 
-  it('sets plan to failed and posts system message when GitHub returns 403', async () => {
+  it('sets plan to failed and rethrows plain-English error when GitHub returns 403', async () => {
     const githubError = Object.assign(new Error('Forbidden'), { status: 403 })
     mockIssuesCreateComment.mockRejectedValueOnce(githubError)
 
     const actions = [{ action_type: 'comment_pr', payload: { pr_number: 1, body: 'review' } }]
     const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
-    const mockInsert = vi.fn().mockResolvedValue({ error: null })
 
     let fromCallIdx = 0
-    mockServiceFrom.mockImplementation((table: string) => {
+    mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions, 'ch-test'), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
-      if (table === 'plans') return { update: mockUpdate }
-      if (table === 'messages') return { insert: mockInsert }
-      return { update: mockUpdate, insert: mockInsert }
+      return { update: mockUpdate }
     })
 
     const { executePlanActions } = await import('@/lib/github/executor')
-    await executePlanActions(PLAN_ID, WORKSPACE_ID)
-
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
-    expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ error_message: expect.stringContaining('permissions') })
-    )
-    expect(mockInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ channel_id: 'ch-test', author_type: 'system' })
-    )
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('permissions')
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', error_message: expect.stringContaining('permissions') }))
   })
 
-  it('sets plan to failed with 404 message when GitHub returns 404', async () => {
+  it('sets plan to failed with 404 message and rethrows when GitHub returns 404', async () => {
     const githubError = Object.assign(new Error('Not Found'), { status: 404 })
     mockGitGetRef.mockRejectedValueOnce(githubError)
 
     const actions = [{ action_type: 'create_pr', payload: { title: 'PR', body: '', head_branch: 'feat/x', base_branch: 'main' } }]
     const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
-    const mockInsert = vi.fn().mockResolvedValue({ error: null })
 
     let fromCallIdx = 0
-    mockServiceFrom.mockImplementation((table: string) => {
+    mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
-      if (table === 'plans') return { update: mockUpdate }
-      if (table === 'messages') return { insert: mockInsert }
-      return { update: mockUpdate, insert: mockInsert }
+      return { update: mockUpdate }
     })
 
     const { executePlanActions } = await import('@/lib/github/executor')
-    await executePlanActions(PLAN_ID, WORKSPACE_ID)
-
-    expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'failed', error_message: expect.stringContaining("couldn't be found") })
-    )
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow("couldn't be found")
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
   })
 
-  it('uses generic error message for unknown error status', async () => {
+  it('throws when repo_full_name is pending', async () => {
+    mockServiceFrom
+      .mockReturnValueOnce(planChain([]))
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { installation_id: '123', repo_full_name: 'pending' }, error: null }),
+      })
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('repo not yet connected')
+  })
+
+  it('uses generic error message for unknown error status and rethrows', async () => {
     mockIssuesCreate.mockRejectedValueOnce(new Error('Network timeout'))
 
     const actions = [{ action_type: 'create_issue', payload: { title: 'X', body: '', labels: [] } }]
     const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
-    const mockInsert = vi.fn().mockResolvedValue({ error: null })
 
     let fromCallIdx = 0
-    mockServiceFrom.mockImplementation((table: string) => {
+    mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
       if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
       if (fromCallIdx === 2) return installationChain()
-      if (table === 'plans') return { update: mockUpdate }
-      if (table === 'messages') return { insert: mockInsert }
-      return { update: mockUpdate, insert: mockInsert }
+      return { update: mockUpdate }
     })
 
     const { executePlanActions } = await import('@/lib/github/executor')
-    await executePlanActions(PLAN_ID, WORKSPACE_ID)
-
-    expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'failed', error_message: expect.stringContaining("went wrong") })
-    )
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('went wrong')
   })
 })

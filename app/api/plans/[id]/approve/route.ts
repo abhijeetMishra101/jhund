@@ -77,17 +77,13 @@ export async function POST(
         })
       })
       .catch(async (err: unknown) => {
-        const reason = err instanceof Error ? err.message : String(err)
+        const reason = err instanceof Error ? err.message : 'Something went wrong on GitHub\'s side. Try again in a minute.'
         console.error('[plan:approve] execution failed:', reason)
-        await serviceClient
-          .from('plans')
-          .update({ status: 'failed', failure_reason: reason })
-          .eq('id', planId)
         await serviceClient.from('messages').insert({
           channel_id: plan.channel_id,
           author_type: 'system',
           author_id: userRow.workspace_id,
-          content: `Action failed: ${reason}`,
+          content: `⚠️ ${reason}`,
         })
       })
   )

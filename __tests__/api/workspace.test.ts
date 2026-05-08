@@ -141,11 +141,21 @@ describe('POST /api/workspace/setup', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns 409 when workspace already exists', async () => {
+  it('returns 200 with existing workspace when called again (idempotent)', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
-    mockFrom.mockReturnValueOnce({
-      select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { workspace_id: WORKSPACE_ID }, error: null }),
+    let callIdx = 0
+    mockFrom.mockImplementation(() => {
+      callIdx++
+      const chain: Record<string, unknown> = {}
+      chain.select = vi.fn().mockReturnValue(chain)
+      chain.eq = vi.fn().mockReturnValue(chain)
+      chain.single = vi.fn().mockResolvedValue({
+        data: callIdx === 1
+          ? { workspace_id: WORKSPACE_ID }
+          : { id: WORKSPACE_ID, slug: 'acme', name: 'Acme' },
+        error: null,
+      })
+      return chain
     })
     const { POST } = await import('@/app/api/workspace/setup/route')
     const req = new Request('http://localhost/api/workspace/setup', {
@@ -154,7 +164,9 @@ describe('POST /api/workspace/setup', () => {
       body: JSON.stringify({ name: 'Acme', template: 'startup', workingStyle: 'balanced' }),
     })
     const res = await POST(req as Parameters<typeof POST>[0])
-    expect(res.status).toBe(409)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.workspace.slug).toBe('acme')
   })
 
   it('returns 400 when name is blank', async () => {
