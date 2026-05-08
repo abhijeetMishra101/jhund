@@ -8,21 +8,23 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const installationId = searchParams.get('installation_id')
   const state = searchParams.get('state')
-
-  const cookieStore = await cookies()
-  const storedState = cookieStore.get('github_oauth_state')?.value
-
-  // Validate CSRF state
-  if (!state || !storedState || state !== storedState) {
-    return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
-  }
+  const setupAction = searchParams.get('setup_action')
 
   if (!installationId) {
     return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
   }
 
-  // Clear state cookie
-  cookieStore.delete('github_oauth_state')
+  const cookieStore = await cookies()
+
+  // setup_action=update means the user accepted a permission change on an existing
+  // installation — no CSRF state cookie is set for this flow, skip state validation
+  if (setupAction !== 'update') {
+    const storedState = cookieStore.get('github_oauth_state')?.value
+    if (!state || !storedState || state !== storedState) {
+      return NextResponse.redirect(new URL('/onboarding?github_error=1', request.url))
+    }
+    cookieStore.delete('github_oauth_state')
+  }
 
   try {
     const supabase = await createClient()

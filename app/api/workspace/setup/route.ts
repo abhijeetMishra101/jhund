@@ -47,7 +47,13 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (existingUser?.workspace_id) {
-    return NextResponse.json({ error: 'Workspace already exists' }, { status: 409 })
+    // Idempotent — return existing workspace so onboarding can continue
+    const { data: existing } = await supabase
+      .from('workspaces')
+      .select('id, slug, name')
+      .eq('id', existingUser.workspace_id)
+      .single()
+    if (existing) return NextResponse.json({ workspace: existing }, { status: 200 })
   }
 
   try {

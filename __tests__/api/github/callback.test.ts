@@ -133,4 +133,21 @@ describe('GET /api/github/callback', () => {
     await GET(makeRequest({ installation_id: INSTALLATION_ID, state: STATE }))
     expect(mockCookieDelete).toHaveBeenCalledWith('github_oauth_state')
   })
+
+  it('skips state validation and succeeds for setup_action=update (permission re-accept)', async () => {
+    // No state cookie set — simulates re-accepting permissions on existing installation
+    mockCookieGet.mockReturnValue(undefined)
+    const { GET } = await import('@/app/api/github/callback/route')
+    const res = await GET(makeRequest({ installation_id: INSTALLATION_ID, setup_action: 'update' }))
+    const location = res.headers.get('location') ?? ''
+    expect(location).toContain('/onboarding')
+    expect(location).toContain('github_connected=1')
+  })
+
+  it('redirects to github_error when installation_id missing even for setup_action=update', async () => {
+    mockCookieGet.mockReturnValue(undefined)
+    const { GET } = await import('@/app/api/github/callback/route')
+    const res = await GET(makeRequest({ setup_action: 'update' }))
+    expect(res.headers.get('location')).toContain('github_error=1')
+  })
 })
