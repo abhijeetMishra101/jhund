@@ -52,8 +52,8 @@ const WORKSPACE = {
 }
 
 const CHANNELS = [
-  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: 'bot-1', position: 0, created_at: '' },
-  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: 'bot-2', position: 1, created_at: '' },
+  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: 'bot-1', position: 0, archived: false, created_at: '' },
+  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: 'bot-2', position: 1, archived: false, created_at: '' },
 ]
 
 const BOT_ROLES = [{ id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley' }]
