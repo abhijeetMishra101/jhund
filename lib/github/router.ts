@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import type { ChainStep } from '@/lib/workflow-chain'
 
 export interface RouteMatch {
   channelId: string
@@ -7,16 +8,15 @@ export interface RouteMatch {
 
 /**
  * Given a GitHub installation_id, event_type, and the labels on the payload,
- * returns all matching channel+workspace pairs from github_triggers.
+ * returns all matching ChainSteps from github_triggers.
  */
 export async function routeGithubEvent(
   installationId: string,
   eventType: string,
   labels: string[]
-): Promise<RouteMatch[]> {
+): Promise<ChainStep[]> {
   const supabase = createServiceClient()
 
-  // Resolve workspace from installation
   const { data: installation } = await supabase
     .from('github_installations')
     .select('workspace_id')
@@ -25,22 +25,15 @@ export async function routeGithubEvent(
 
   if (!installation) return []
 
-  const { data: triggers } = await supabase
-    .from('github_triggers')
-    .select('channel_id')
-    .eq('workspace_id', installation.workspace_id)
-    .eq('event_type', eventType)
-
-  if (!triggers?.length) return []
-
-  // Apply label filter — if label_filter is set, at least one label must match
   const { data: allTriggers } = await supabase
     .from('github_triggers')
-    .select('channel_id, label_filter')
+    .select('channel_id, label_filter, chain_group, chain_type, chain_order')
     .eq('workspace_id', installation.workspace_id)
     .eq('event_type', eventType)
 
-  const matched = (allTriggers ?? []).filter((t) => {
+  if (!allTriggers?.length) return []
+
+  const matched = allTriggers.filter((t) => {
     if (!t.label_filter) return true
     return labels.includes(t.label_filter)
   })
@@ -48,6 +41,9 @@ export async function routeGithubEvent(
   return matched.map((t) => ({
     channelId: t.channel_id,
     workspaceId: installation.workspace_id,
+    chainGroup: t.chain_group,
+    chainType: t.chain_type,
+    chainOrder: t.chain_order,
   }))
 }
 

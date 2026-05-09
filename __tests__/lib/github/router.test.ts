@@ -18,12 +18,23 @@ function singleChain(data: unknown) {
   }
 }
 
-function listChain(data: unknown) {
+function triggerRow(overrides: Record<string, unknown> = {}) {
+  return {
+    channel_id: CHANNEL_ID,
+    label_filter: null,
+    chain_group: null,
+    chain_type: 'parallel',
+    chain_order: 0,
+    ...overrides,
+  }
+}
+
+function triggersChain(data: unknown[]) {
   return {
     select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    mockResolvedValue: vi.fn(),
-    then: undefined as unknown,
+    eq: vi.fn().mockImplementation(function(this: unknown) {
+      return { eq: vi.fn().mockResolvedValue({ data, error: null }) }
+    }),
   }
 }
 
@@ -34,134 +45,67 @@ describe('routeGithubEvent', () => {
   })
 
   it('returns [] when no installation found', async () => {
-    mockServiceFrom.mockReturnValueOnce(singleChain(null)) // github_installations
+    mockServiceFrom.mockReturnValueOnce(singleChain(null))
     const { routeGithubEvent } = await import('@/lib/github/router')
     expect(await routeGithubEvent(INSTALLATION_ID, 'pull_request', [])).toEqual([])
   })
 
   it('returns [] when no matching triggers', async () => {
     mockServiceFrom
-      .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID })) // installations
-      .mockReturnValueOnce({ // github_triggers (first query)
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        then: undefined,
-      })
-
-    // Mock the triggers query to return empty
-    const chain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-    }
-    // Make the eq chain eventually resolve to empty
-    let eqCallCount = 0
-    chain.eq.mockImplementation(() => {
-      eqCallCount++
-      if (eqCallCount >= 2) return Promise.resolve({ data: [], error: null })
-      return chain
-    })
-    mockServiceFrom.mockReturnValueOnce(chain)
-
+      .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID }))
+      .mockReturnValueOnce(triggersChain([]))
     const { routeGithubEvent } = await import('@/lib/github/router')
     expect(await routeGithubEvent(INSTALLATION_ID, 'pull_request', [])).toEqual([])
   })
 
-  it('returns all triggers when there is no label_filter', async () => {
-    const triggers = [{ channel_id: CHANNEL_ID, label_filter: null }]
-
+  it('returns ChainStep when trigger has no label_filter', async () => {
     mockServiceFrom
       .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID }))
-      .mockReturnValueOnce({ // first triggers query (existence check)
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-      .mockReturnValueOnce({ // second triggers query (with label_filter)
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-
+      .mockReturnValueOnce(triggersChain([triggerRow()]))
     const { routeGithubEvent } = await import('@/lib/github/router')
     const result = await routeGithubEvent(INSTALLATION_ID, 'pull_request', [])
-    expect(result).toEqual([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      channelId: CHANNEL_ID,
+      workspaceId: WORKSPACE_ID,
+      chainGroup: null,
+      chainType: 'parallel',
+      chainOrder: 0,
+    })
   })
 
-  it('filters out triggers where label_filter does not match', async () => {
-    const triggers = [
-      { channel_id: 'ch-1', label_filter: 'security' },
-      { channel_id: 'ch-2', label_filter: null },
-    ]
-
+  it('filters out triggers where label_filter does not match payload labels', async () => {
     mockServiceFrom
       .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID }))
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-
+      .mockReturnValueOnce(triggersChain([
+        triggerRow({ channel_id: 'ch-1', label_filter: 'security' }),
+        triggerRow({ channel_id: 'ch-2', label_filter: null }),
+      ]))
     const { routeGithubEvent } = await import('@/lib/github/router')
-    // No 'security' label in payload → only the no-filter trigger matches
     const result = await routeGithubEvent(INSTALLATION_ID, 'pull_request', ['bug'])
     expect(result).toHaveLength(1)
     expect(result[0].channelId).toBe('ch-2')
   })
 
-  it('returns [] when allTriggers query returns null (uses ?? [] fallback)', async () => {
-    const triggers = [{ channel_id: CHANNEL_ID, label_filter: null }]
-
+  it('returns [] when triggers query returns null', async () => {
     mockServiceFrom
       .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID }))
-      .mockReturnValueOnce({ // first triggers query (existence check)
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-      .mockReturnValueOnce({ // second triggers query returns null data
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) }
-        }),
-      })
-
+      .mockReturnValueOnce(triggersChain([]))
     const { routeGithubEvent } = await import('@/lib/github/router')
     const result = await routeGithubEvent(INSTALLATION_ID, 'pull_request', [])
     expect(result).toEqual([])
   })
 
   it('includes trigger when label_filter matches a payload label', async () => {
-    const triggers = [{ channel_id: CHANNEL_ID, label_filter: 'security' }]
-
     mockServiceFrom
       .mockReturnValueOnce(singleChain({ workspace_id: WORKSPACE_ID }))
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation(function(this: unknown) {
-          return { eq: vi.fn().mockResolvedValue({ data: triggers, error: null }) }
-        }),
-      })
-
+      .mockReturnValueOnce(triggersChain([
+        triggerRow({ label_filter: 'security', chain_group: 'security-alert', chain_type: 'parallel', chain_order: 0 }),
+      ]))
     const { routeGithubEvent } = await import('@/lib/github/router')
     const result = await routeGithubEvent(INSTALLATION_ID, 'pull_request', ['bug', 'security'])
     expect(result).toHaveLength(1)
-    expect(result[0].channelId).toBe(CHANNEL_ID)
+    expect(result[0]).toMatchObject({ channelId: CHANNEL_ID, chainGroup: 'security-alert' })
   })
 })
 
@@ -174,10 +118,8 @@ describe('recordInstallation', () => {
   it('upserts a github_installations row', async () => {
     const mockUpsert = vi.fn().mockResolvedValue({ data: null, error: null })
     mockServiceFrom.mockReturnValueOnce({ upsert: mockUpsert })
-
     const { recordInstallation } = await import('@/lib/github/router')
     await recordInstallation('inst-1', WORKSPACE_ID, 'owner/repo')
-
     expect(mockUpsert).toHaveBeenCalledWith(
       { workspace_id: WORKSPACE_ID, installation_id: 'inst-1', repo_full_name: 'owner/repo' },
       { onConflict: 'installation_id' }

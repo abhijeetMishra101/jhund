@@ -236,6 +236,9 @@ export type Database = {
           label_filter: string | null
           channel_id: string
           bot_role_id: string
+          chain_group: string | null
+          chain_type: 'sequential' | 'parallel'
+          chain_order: number
           created_at: string
         }
         Insert: {
@@ -245,6 +248,9 @@ export type Database = {
           label_filter?: string | null
           channel_id: string
           bot_role_id: string
+          chain_group?: string | null
+          chain_type?: 'sequential' | 'parallel'
+          chain_order?: number
           created_at?: string
         }
         Update: {
@@ -254,6 +260,9 @@ export type Database = {
           label_filter?: string | null
           channel_id?: string
           bot_role_id?: string
+          chain_group?: string | null
+          chain_type?: 'sequential' | 'parallel'
+          chain_order?: number
           created_at?: string
         }
         Relationships: []

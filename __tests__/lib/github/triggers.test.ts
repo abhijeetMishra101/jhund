@@ -121,11 +121,14 @@ describe('seedDefaultTriggers', () => {
 
     expect(insertMock).toHaveBeenCalledOnce()
     const inserted = insertMock.mock.calls[0][0] as unknown[]
-    expect(inserted).toHaveLength(5)
+    // 6 triggers: pull_request→eng, issues security→sec, issues security→ops (parallel chain),
+    // issues bug→eng, check_run→eng, release→ops (qa skipped — not in channel mock)
+    expect(inserted).toHaveLength(6)
     expect(inserted).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ event_type: 'pull_request', channel_id: 'ch-eng' }),
-        expect.objectContaining({ event_type: 'issues', label_filter: 'security', channel_id: 'ch-sec' }),
+        expect.objectContaining({ event_type: 'pull_request', channel_id: 'ch-eng', chain_group: 'pr-review' }),
+        expect.objectContaining({ event_type: 'issues', label_filter: 'security', channel_id: 'ch-sec', chain_group: 'security-alert' }),
+        expect.objectContaining({ event_type: 'issues', label_filter: 'security', channel_id: 'ch-ops', chain_group: 'security-alert' }),
         expect.objectContaining({ event_type: 'issues', label_filter: 'bug', channel_id: 'ch-eng' }),
         expect.objectContaining({ event_type: 'check_run', channel_id: 'ch-eng' }),
         expect.objectContaining({ event_type: 'release', channel_id: 'ch-ops' }),
