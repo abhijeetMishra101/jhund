@@ -3,8 +3,8 @@ import { waitUntil } from '@vercel/functions'
 import { verifyGithubSignature } from '@/lib/github/verify'
 import { summariseEvent, extractLabels } from '@/lib/github/events'
 import { routeGithubEvent } from '@/lib/github/router'
+import { buildChains, executeChain } from '@/lib/workflow-chain'
 import { createServiceClient } from '@/lib/supabase/server'
-import { respondToMessage } from '@/lib/bots'
 
 export async function POST(request: Request) {
   // 1. Read raw body BEFORE any parsing
@@ -29,41 +29,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  // 4. Route to matching channels via github_triggers
+  // 4. Route to matching channels via github_triggers (returns ChainSteps)
   const labels = extractLabels(payload)
-  const matches = await routeGithubEvent(installationId, eventType, labels)
-  console.log('[webhook] matches:', JSON.stringify(matches))
+  const steps = await routeGithubEvent(installationId, eventType, labels)
+  console.log('[webhook] matched steps:', steps.length)
 
-  if (!matches.length) {
+  if (!steps.length) {
     return NextResponse.json({ ok: true })
   }
 
-  // 5. For each matched channel: insert a system message then trigger bot
+  // 5. Insert system message in every matched channel, then execute chains
   const supabase = createServiceClient()
 
   waitUntil(
-    Promise.all(
-      matches.map(async ({ channelId, workspaceId }) => {
-        const { data: msg, error: insertError } = await supabase
-          .from('messages')
-          .insert({
+    (async () => {
+      // Insert the event summary as a system message in all matched channels
+      await Promise.all(
+        steps.map(({ channelId, workspaceId }) =>
+          supabase.from('messages').insert({
             channel_id: channelId,
             author_type: 'system',
             author_id: workspaceId,
             content: summary,
           })
-          .select('id')
-          .single()
+        )
+      )
 
-        console.log('[webhook] insert msg:', msg?.id ?? 'null', insertError?.message ?? '')
-
-        if (!msg) return
-
-        await respondToMessage(channelId, workspaceId).catch((err: unknown) => {
-          console.error('[webhook] bot response failed:', err)
-        })
-      })
-    )
+      // Build chain groups and execute — sequential chains run in order,
+      // parallel chains run concurrently, independent triggers run concurrently
+      const chains = buildChains(steps)
+      await Promise.all(chains.map((chain) => executeChain(chain)))
+    })()
   )
 
   return NextResponse.json({ ok: true })

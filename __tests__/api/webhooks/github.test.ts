@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createHmac } from 'crypto'
 
 const mockVerify = vi.hoisted(() => vi.fn())
 const mockRouteGithubEvent = vi.hoisted(() => vi.fn())
-const mockRespondToMessage = vi.hoisted(() => vi.fn())
+const mockBuildChains = vi.hoisted(() => vi.fn())
+const mockExecuteChain = vi.hoisted(() => vi.fn())
 const mockServiceFrom = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/github/verify', () => ({ verifyGithubSignature: mockVerify }))
 vi.mock('@/lib/github/router', () => ({ routeGithubEvent: mockRouteGithubEvent }))
-vi.mock('@/lib/bots', () => ({ respondToMessage: mockRespondToMessage }))
+vi.mock('@/lib/workflow-chain', () => ({
+  buildChains: mockBuildChains,
+  executeChain: mockExecuteChain,
+}))
 vi.mock('@/lib/supabase/server', () => ({
   createServiceClient: vi.fn().mockReturnValue({ from: mockServiceFrom }),
 }))
@@ -18,8 +21,18 @@ vi.mock('next/headers', () => ({ cookies: vi.fn().mockReturnValue({ getAll: () =
 const CHANNEL_ID = 'channel-uuid'
 const WORKSPACE_ID = 'workspace-uuid'
 
+function chainStep(overrides = {}) {
+  return {
+    channelId: CHANNEL_ID,
+    workspaceId: WORKSPACE_ID,
+    chainGroup: null,
+    chainType: 'parallel' as const,
+    chainOrder: 0,
+    ...overrides,
+  }
+}
+
 function makeWebhookReq(payload: Record<string, unknown>, eventType: string, valid = true) {
-  const body = JSON.stringify(payload)
   return new Request('http://localhost/api/webhooks/github', {
     method: 'POST',
     headers: {
@@ -27,8 +40,15 @@ function makeWebhookReq(payload: Record<string, unknown>, eventType: string, val
       'x-hub-signature-256': valid ? 'sha256=valid' : 'sha256=bad',
       'content-type': 'application/json',
     },
-    body,
+    body: JSON.stringify(payload),
   })
+}
+
+const PR_PAYLOAD = {
+  action: 'opened',
+  pull_request: { number: 1, title: 'Fix bug', user: { login: 'alice' }, merged: false },
+  repository: { name: 'my-repo' },
+  installation: { id: 123 },
 }
 
 describe('POST /api/webhooks/github', () => {
@@ -36,105 +56,83 @@ describe('POST /api/webhooks/github', () => {
     vi.clearAllMocks()
     mockVerify.mockReturnValue(true)
     mockRouteGithubEvent.mockResolvedValue([])
-    mockRespondToMessage.mockResolvedValue('msg-uuid')
+    mockBuildChains.mockReturnValue([])
+    mockExecuteChain.mockResolvedValue(undefined)
   })
 
   it('returns 401 when signature is invalid', async () => {
     mockVerify.mockReturnValue(false)
     const { POST } = await import('@/app/api/webhooks/github/route')
-    const req = makeWebhookReq({}, 'pull_request', false)
-    const res = await POST(req)
+    const res = await POST(makeWebhookReq({}, 'pull_request', false))
     expect(res.status).toBe(401)
   })
 
-  it('returns 200 ok when event produces no summary (unknown type)', async () => {
+  it('returns 200 and skips routing for unknown event types (no summary)', async () => {
     const { POST } = await import('@/app/api/webhooks/github/route')
-    const req = makeWebhookReq({}, 'workflow_run')
-    const res = await POST(req)
+    const res = await POST(makeWebhookReq({}, 'workflow_run'))
     expect(res.status).toBe(200)
     expect(mockRouteGithubEvent).not.toHaveBeenCalled()
   })
 
-  it('returns 200 ok when no channels match the event', async () => {
+  it('returns 200 when no channels match the event', async () => {
     mockRouteGithubEvent.mockResolvedValue([])
     const { POST } = await import('@/app/api/webhooks/github/route')
-    const payload = {
-      action: 'opened',
-      pull_request: { number: 1, title: 'Fix bug', user: { login: 'alice' }, merged: false },
-      repository: { name: 'my-repo' },
-      installation: { id: 123 },
-    }
-    const res = await POST(makeWebhookReq(payload, 'pull_request'))
+    const res = await POST(makeWebhookReq(PR_PAYLOAD, 'pull_request'))
     expect(res.status).toBe(200)
     expect(mockServiceFrom).not.toHaveBeenCalled()
+    expect(mockBuildChains).not.toHaveBeenCalled()
   })
 
-  it('returns 200 ok when installation field is absent (installationId defaults to empty string)', async () => {
+  it('inserts system messages and calls buildChains + executeChain when channels match', async () => {
+    const step = chainStep()
+    mockRouteGithubEvent.mockResolvedValue([step])
+    mockBuildChains.mockReturnValue([[step]])
+    mockServiceFrom.mockReturnValue({ insert: vi.fn().mockResolvedValue({ error: null }) })
+
+    let capturedPromise: Promise<unknown> | null = null
+    const { waitUntil } = await import('@vercel/functions')
+    vi.mocked(waitUntil).mockImplementationOnce((p: Promise<unknown>) => { capturedPromise = p })
+
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    const res = await POST(makeWebhookReq(PR_PAYLOAD, 'pull_request'))
+    await capturedPromise
+
+    expect(res.status).toBe(200)
+    expect(mockServiceFrom).toHaveBeenCalled()
+    expect(mockBuildChains).toHaveBeenCalledWith([step])
+    expect(mockExecuteChain).toHaveBeenCalledWith([step])
+  })
+
+  it('calls executeChain once per chain group', async () => {
+    const stepA = chainStep({ channelId: 'ch-eng', chainGroup: 'pr-review', chainOrder: 0 })
+    const stepB = chainStep({ channelId: 'ch-qa',  chainGroup: 'pr-review', chainOrder: 1 })
+    mockRouteGithubEvent.mockResolvedValue([stepA, stepB])
+    mockBuildChains.mockReturnValue([[stepA, stepB]])
+    mockServiceFrom.mockReturnValue({ insert: vi.fn().mockResolvedValue({ error: null }) })
+
+    let capturedPromise: Promise<unknown> | null = null
+    const { waitUntil } = await import('@vercel/functions')
+    vi.mocked(waitUntil).mockImplementationOnce((p: Promise<unknown>) => { capturedPromise = p })
+
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    await POST(makeWebhookReq(PR_PAYLOAD, 'pull_request'))
+    await capturedPromise
+
+    expect(mockExecuteChain).toHaveBeenCalledOnce()
+    expect(mockExecuteChain).toHaveBeenCalledWith([stepA, stepB])
+  })
+
+  it('still returns 200 when installation field is absent', async () => {
     mockRouteGithubEvent.mockResolvedValue([])
     const { POST } = await import('@/app/api/webhooks/github/route')
     const payload = {
       action: 'opened',
       pull_request: { number: 2, title: 'No install', user: { login: 'bob' }, merged: false },
       repository: { name: 'my-repo' },
-      // no installation field
     }
     const res = await POST(makeWebhookReq(payload, 'pull_request'))
     expect(res.status).toBe(200)
     expect(mockRouteGithubEvent).toHaveBeenCalledWith('', 'pull_request', expect.any(Array))
-  })
-
-  it('inserts a system message and calls respondToMessage when a channel matches', async () => {
-    mockRouteGithubEvent.mockResolvedValue([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
-    mockServiceFrom.mockReturnValue({
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }),
-    })
-
-    const { POST } = await import('@/app/api/webhooks/github/route')
-    const payload = {
-      action: 'opened',
-      pull_request: { number: 1, title: 'Fix bug', user: { login: 'alice' }, merged: false },
-      repository: { name: 'my-repo' },
-      installation: { id: 123 },
-    }
-    const res = await POST(makeWebhookReq(payload, 'pull_request'))
-
-    expect(res.status).toBe(200)
-    expect(mockServiceFrom).toHaveBeenCalled()
-    expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID)
-  })
-
-  it('does not crash and still returns 200 when respondToMessage throws inside the waitUntil map', async () => {
-    mockRouteGithubEvent.mockResolvedValue([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
-    mockRespondToMessage.mockRejectedValueOnce(new Error('bot failure'))
-    mockServiceFrom.mockReturnValue({
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }),
-    })
-
-    // Capture the promise from waitUntil so we can await it
-    let capturedPromise: Promise<unknown> | null = null
-    const { waitUntil } = await import('@vercel/functions')
-    vi.mocked(waitUntil).mockImplementationOnce((p: Promise<unknown>) => {
-      capturedPromise = p
-    })
-
-    const { POST } = await import('@/app/api/webhooks/github/route')
-    const payload = {
-      action: 'opened',
-      pull_request: { number: 1, title: 'Fix bug', user: { login: 'alice' }, merged: false },
-      repository: { name: 'my-repo' },
-      installation: { id: 123 },
-    }
-    const res = await POST(makeWebhookReq(payload, 'pull_request'))
-    expect(res.status).toBe(200)
-
-    // Await the background task — should not throw
-    await capturedPromise
-    // respondToMessage was called and threw, but it was caught
-    expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID)
   })
 
   it('routes check_run event → routeGithubEvent called with "check_run"', async () => {
@@ -148,11 +146,7 @@ describe('POST /api/webhooks/github', () => {
     }
     const res = await POST(makeWebhookReq(payload, 'check_run'))
     expect(res.status).toBe(200)
-    expect(mockRouteGithubEvent).toHaveBeenCalledWith(
-      expect.any(String),
-      'check_run',
-      expect.any(Array)
-    )
+    expect(mockRouteGithubEvent).toHaveBeenCalledWith(expect.any(String), 'check_run', expect.any(Array))
   })
 
   it('routes release event → routeGithubEvent called with "release"', async () => {
@@ -166,11 +160,7 @@ describe('POST /api/webhooks/github', () => {
     }
     const res = await POST(makeWebhookReq(payload, 'release'))
     expect(res.status).toBe(200)
-    expect(mockRouteGithubEvent).toHaveBeenCalledWith(
-      expect.any(String),
-      'release',
-      expect.any(Array)
-    )
+    expect(mockRouteGithubEvent).toHaveBeenCalledWith(expect.any(String), 'release', expect.any(Array))
   })
 
   it('returns 401 for check_run with invalid signature', async () => {
@@ -184,24 +174,5 @@ describe('POST /api/webhooks/github', () => {
     }
     const res = await POST(makeWebhookReq(payload, 'check_run', false))
     expect(res.status).toBe(401)
-  })
-
-  it('skips respondToMessage when message insert returns null', async () => {
-    mockRouteGithubEvent.mockResolvedValue([{ channelId: CHANNEL_ID, workspaceId: WORKSPACE_ID }])
-    mockServiceFrom.mockReturnValue({
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'fail' } }),
-    })
-
-    const { POST } = await import('@/app/api/webhooks/github/route')
-    const payload = {
-      action: 'opened',
-      pull_request: { number: 1, title: 'PR', user: { login: 'bob' }, merged: false },
-      repository: { name: 'repo' },
-      installation: { id: 123 },
-    }
-    await POST(makeWebhookReq(payload, 'pull_request'))
-    expect(mockRespondToMessage).not.toHaveBeenCalled()
   })
 })
