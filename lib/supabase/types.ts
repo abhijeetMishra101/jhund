@@ -163,7 +163,7 @@ export type Database = {
           bot_role_id: string
           description_md: string
           github_actions: Json
-          status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed'
+          status: 'pending' | 'approved' | 'executing' | 'rejected' | 'executed' | 'failed'
           approved_by: string | null
           approved_at: string | null
           executed_at: string | null

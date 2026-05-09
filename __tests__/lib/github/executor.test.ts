@@ -32,13 +32,14 @@ const WORKSPACE_ID = 'workspace-uuid'
 const INSTALLATION_ID = '12345'
 const REPO = 'owner/repo'
 
+// Simulates the atomic claim: update().eq().eq().select().single()
 function planChain(actions: unknown[], channelId = 'ch-test') {
-  return {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({ data: { github_actions: actions, channel_id: channelId }, error: null }),
-    update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) }),
-  }
+  const single = vi.fn().mockResolvedValue({ data: { github_actions: actions, channel_id: channelId }, error: null })
+  const select = vi.fn().mockReturnValue({ single })
+  const innerEq = vi.fn().mockReturnValue({ select })
+  const outerEq = vi.fn().mockReturnValue({ eq: innerEq })
+  const update = vi.fn().mockReturnValue({ eq: outerEq })
+  return { update }
 }
 
 function installationChain() {
@@ -73,14 +74,16 @@ beforeEach(() => {
 })
 
 describe('executePlanActions', () => {
-  it('throws when plan is not found', async () => {
-    mockServiceFrom.mockReturnValueOnce({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
-    })
+  it('returns early without throwing when plan cannot be claimed (already executing/executed)', async () => {
+    // Claim returns null — plan already in non-approved state
+    const single = vi.fn().mockResolvedValue({ data: null, error: null })
+    const select = vi.fn().mockReturnValue({ single })
+    const innerEq = vi.fn().mockReturnValue({ select })
+    const outerEq = vi.fn().mockReturnValue({ eq: innerEq })
+    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnValue({ eq: outerEq }) })
+
     const { executePlanActions } = await import('@/lib/github/executor')
-    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('Plan not found')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).resolves.toBeUndefined()
   })
 
   it('throws when no GitHub installation is linked', async () => {
@@ -214,7 +217,7 @@ describe('executePlanActions', () => {
     let fromCallIdx = 0
     mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
-      if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
+      if (fromCallIdx === 1) return planChain(actions)  // claim
       if (fromCallIdx === 2) return installationChain()
       if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate, select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null, error: null }) }
@@ -236,7 +239,7 @@ describe('executePlanActions', () => {
     let fromCallIdx = 0
     mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
-      if (fromCallIdx === 1) return { ...planChain(actions, 'ch-test'), update: mockUpdate }
+      if (fromCallIdx === 1) return planChain(actions, 'ch-test')  // claim
       if (fromCallIdx === 2) return installationChain()
       if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate }
@@ -257,7 +260,7 @@ describe('executePlanActions', () => {
     let fromCallIdx = 0
     mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
-      if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
+      if (fromCallIdx === 1) return planChain(actions)  // claim
       if (fromCallIdx === 2) return installationChain()
       if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate }
@@ -367,7 +370,7 @@ describe('executePlanActions', () => {
     let fromCallIdx = 0
     mockServiceFrom.mockImplementation(() => {
       fromCallIdx++
-      if (fromCallIdx === 1) return { ...planChain(actions), update: mockUpdate }
+      if (fromCallIdx === 1) return planChain(actions)  // claim
       if (fromCallIdx === 2) return installationChain()
       if (fromCallIdx === 3) return workspaceChain()
       return { update: mockUpdate }
