@@ -48,6 +48,7 @@ const WORKSPACE = {
   action_cap: 50, actions_used: 10,
   working_style: 'balanced' as const,
   github_installation_id: null, github_repo: null,
+  last_standup_at: null, last_retro_at: null,
   created_at: '2024-01-01T00:00:00Z',
 }
 

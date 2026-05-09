@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/standup",
+      "schedule": "0 9 * * 1-5"
+    },
+    {
+      "path": "/api/cron/retrospective",
+      "schedule": "0 17 * * 5"
+    },
+    {
+      "path": "/api/cron/archive-messages",
+      "schedule": "0 2 * * 0"
+    }
+  ]
+}

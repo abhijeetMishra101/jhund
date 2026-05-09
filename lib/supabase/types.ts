@@ -14,6 +14,8 @@ export type Database = {
           working_style: 'hands-off' | 'balanced' | 'hands-on'
           github_installation_id: string | null
           github_repo: string | null
+          last_standup_at: string | null
+          last_retro_at: string | null
           created_at: string
         }
         Insert: {
@@ -26,6 +28,8 @@ export type Database = {
           working_style?: 'hands-off' | 'balanced' | 'hands-on'
           github_installation_id?: string | null
           github_repo?: string | null
+          last_standup_at?: string | null
+          last_retro_at?: string | null
           created_at?: string
         }
         Update: {
@@ -38,6 +42,8 @@ export type Database = {
           working_style?: 'hands-off' | 'balanced' | 'hands-on'
           github_installation_id?: string | null
           github_repo?: string | null
+          last_standup_at?: string | null
+          last_retro_at?: string | null
           created_at?: string
         }
         Relationships: []
