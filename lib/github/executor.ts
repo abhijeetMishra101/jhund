@@ -22,14 +22,22 @@ interface GithubAction {
 export async function executePlanActions(planId: string, workspaceId: string): Promise<void> {
   const supabase = createServiceClient()
 
-  // Fetch plan + its actions
-  const { data: plan, error: planError } = await supabase
+  // Atomically claim the plan — only proceeds if status is 'approved'.
+  // Prevents double-execution if approve is called twice concurrently (F-001).
+  const { data: claimed } = await supabase
     .from('plans')
-    .select('github_actions, channel_id')
+    .update({ status: 'executing' } as never)
     .eq('id', planId)
+    .eq('status', 'approved')
+    .select('github_actions, channel_id')
     .single()
 
-  if (planError || !plan) throw new Error(`Plan not found: ${planError?.message ?? ''}`)
+  if (!claimed) {
+    // Plan was already executing, executed, failed, or not found — do nothing
+    return
+  }
+
+  const plan = claimed
 
   // Resolve the GitHub installation for this workspace
   const { data: installation } = await supabase

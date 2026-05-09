@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
   // 3. Summarise the event in plain English
   const summary = summariseEvent(eventType, payload)
-  console.log('[webhook] event:', eventType, '| installationId:', installationId, '| summary:', summary || '(empty)')
+  console.log('[webhook] event:', eventType, '| summary:', summary || '(empty)')
   if (!summary) {
     return NextResponse.json({ ok: true })
   }

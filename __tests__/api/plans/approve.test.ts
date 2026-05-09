@@ -117,6 +117,13 @@ describe('POST /api/plans/[id]/approve', () => {
     expect(res.status).toBe(409)
   })
 
+  it('returns 409 for a plan already in executing state (double-execution guard)', async () => {
+    setupMocks('executing')
+    const req = new Request(`http://localhost/api/plans/${PLAN_ID}/approve`, { method: 'POST' })
+    const res = await POST(req, { params: { id: PLAN_ID } })
+    expect(res.status).toBe(409)
+  })
+
   it('returns 409 for an already-rejected plan', async () => {
     setupMocks('rejected')
     const req = new Request(`http://localhost/api/plans/${PLAN_ID}/approve`, { method: 'POST' })
