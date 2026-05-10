@@ -82,15 +82,19 @@ export async function executePlanActions(planId: string, workspaceId: string): P
   const octokit = await getInstallationOctokit(Number(installation.installation_id))
   const [owner, repo] = installation.repo_full_name.split('/')
 
+  // Detect the repo's default branch so we never hardcode 'main'
+  const { data: repoData } = await octokit.rest.repos.get({ owner, repo })
+  const defaultBranch = repoData.default_branch
+
   const actions = (plan.github_actions as Json[]).map((a) => a as unknown as GithubAction)
 
-  console.log('[executor] plan=%s repo=%s actions=%s', planId, installation.repo_full_name,
-    JSON.stringify(actions.map((a) => a.action_type)))
+  console.log('[executor] plan=%s repo=%s default_branch=%s actions=%s', planId, installation.repo_full_name,
+    defaultBranch, JSON.stringify(actions.map((a) => a.action_type)))
 
   try {
     for (const action of actions) {
       console.log('[executor] running action=%s', action.action_type)
-      await executeAction(octokit, owner, repo, action)
+      await executeAction(octokit, owner, repo, defaultBranch, action)
       console.log('[executor] done action=%s', action.action_type)
     }
 
@@ -117,6 +121,7 @@ async function executeAction(
   octokit: Octokit,
   owner: string,
   repo: string,
+  defaultBranch: string,
   action: GithubAction
 ): Promise<void> {
   const p = action.payload
@@ -137,7 +142,7 @@ async function executeAction(
       const headBranch = String(p.head_branch ?? 'bot/new-pr')
       const title = String(p.title ?? 'New PR')
       const body = String(p.body ?? '')
-      const baseBranch = String(p.base_branch ?? 'main')
+      const baseBranch = String(p.base_branch ?? defaultBranch)
 
       // Get default branch SHA to create head branch
       const { data: ref } = await octokit.rest.git.getRef({
@@ -188,7 +193,7 @@ async function executeAction(
       const filePath = String(p.file_path ?? 'README.md')
       const content = String(p.content ?? '')
       const message = String(p.commit_message ?? `Update ${filePath}`)
-      const branch = String(p.branch ?? 'main')
+      const branch = String(p.branch ?? defaultBranch)
 
       // Get current file SHA if it exists (required by GitHub for updates)
       let sha: string | undefined

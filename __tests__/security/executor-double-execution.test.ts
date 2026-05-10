@@ -78,7 +78,12 @@ describe('executePlanActions — double-execution guard (F-001)', () => {
     mockRpc.mockResolvedValue({ data: true }) // action cap allows
 
     const { getInstallationOctokit } = await import('@/lib/github/auth')
-    const mockOctokit = { rest: { issues: { createComment: vi.fn().mockResolvedValue({}) } } }
+    const mockOctokit = {
+      rest: {
+        repos: { get: vi.fn().mockResolvedValue({ data: { default_branch: 'main' } }) },
+        issues: { createComment: vi.fn().mockResolvedValue({}) },
+      },
+    }
     vi.mocked(getInstallationOctokit).mockResolvedValue(mockOctokit as never)
 
     // plans update (executed) + messages

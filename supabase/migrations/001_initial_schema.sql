@@ -66,7 +66,7 @@ create table if not exists plans (
   bot_role_id     uuid not null references bot_roles(id) on delete cascade,
   description_md  text not null,
   github_actions  jsonb not null default '[]',
-  status          text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'executed', 'failed')),
+  status          text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'executing', 'executed', 'failed')),
   approved_by     uuid references users(id) on delete set null,
   approved_at     timestamptz,
   executed_at     timestamptz,
