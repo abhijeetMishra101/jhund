@@ -6,6 +6,7 @@ const mockIssuesCreateComment = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 const mockPullsCreate = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 const mockGitGetRef = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { object: { sha: 'abc123' } } }))
 const mockGitCreateRef = vi.hoisted(() => vi.fn().mockResolvedValue({}))
+const mockReposGet = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { default_branch: 'main' } }))
 const mockReposGetContent = vi.hoisted(() => vi.fn())
 const mockReposCreateOrUpdateFileContents = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 
@@ -15,6 +16,7 @@ const mockOctokit = {
     pulls: { create: mockPullsCreate },
     git: { getRef: mockGitGetRef, createRef: mockGitCreateRef },
     repos: {
+      get: mockReposGet,
       getContent: mockReposGetContent,
       createOrUpdateFileContents: mockReposCreateOrUpdateFileContents,
     },
