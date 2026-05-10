@@ -202,6 +202,19 @@ async function executeAction(
       const message = String(p.commit_message ?? `Update ${filePath}`)
       const branch = String(p.branch ?? defaultBranch)
 
+      // Ensure the branch exists — create it from the default branch if not
+      try {
+        await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` })
+      } catch {
+        // Branch doesn't exist — create it from the default branch
+        const { data: baseRef } = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` })
+        await octokit.rest.git.createRef({
+          owner, repo,
+          ref: `refs/heads/${branch}`,
+          sha: baseRef.object.sha,
+        })
+      }
+
       // Get current file SHA if it exists (required by GitHub for updates)
       let sha: string | undefined
       try {
