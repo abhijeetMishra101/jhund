@@ -16,8 +16,8 @@ const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
     properties: {
       action_type: {
         type: 'string',
-        enum: ['create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
-        description: 'The type of GitHub action to perform',
+        enum: ['commit_file', 'create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
+        description: 'The type of GitHub action to perform. To write files and open a PR, call this tool twice: first with commit_file, then with create_pr.',
       },
       plain_english_description: {
         type: 'string',
@@ -27,17 +27,22 @@ const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
         type: 'object',
         description:
           'Action-specific fields. Required fields per action_type:\n' +
-          '- comment_pr: { pr_number: <integer>, body: <string> }\n' +
-          '- comment_issue: { issue_number: <integer>, body: <string> }\n' +
+          '- commit_file: { file_path: <string>, content: <string>, commit_message: <string>, branch: <string> }\n' +
+          '- create_pr: { title: <string>, body: <string>, head_branch: <string>, base_branch: <string> }\n' +
           '- create_issue: { title: <string>, body: <string>, labels: <string[]> }\n' +
-          '- create_pr: { title: <string>, body: <string>, head_branch: <string>, base_branch: <string> }',
+          '- comment_pr: { pr_number: <integer>, body: <string> }\n' +
+          '- comment_issue: { issue_number: <integer>, body: <string> }',
         properties: {
+          file_path: { type: 'string', description: 'Path of the file to write (commit_file only)' },
+          content: { type: 'string', description: 'Full file content as a string (commit_file only)' },
+          commit_message: { type: 'string', description: 'Git commit message (commit_file only)' },
+          branch: { type: 'string', description: 'Branch to write the file to, e.g. bot/add-readme (commit_file only)' },
           pr_number: { type: 'integer', description: 'PR number to comment on (comment_pr only)' },
           issue_number: { type: 'integer', description: 'Issue number to comment on (comment_issue only)' },
           body: { type: 'string', description: 'Comment or PR/issue body text' },
           title: { type: 'string', description: 'Title for new PR or issue' },
           labels: { type: 'array', items: { type: 'string' }, description: 'Labels for new issue' },
-          head_branch: { type: 'string', description: 'Branch to merge from (create_pr only)' },
+          head_branch: { type: 'string', description: 'Branch to merge from (create_pr only); must match the branch used in commit_file' },
           base_branch: { type: 'string', description: 'Branch to merge into, usually main (create_pr only)' },
         },
       },
