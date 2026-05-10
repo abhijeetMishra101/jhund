@@ -11,7 +11,7 @@ export class ActionCapExceededError extends Error {
 }
 
 interface GithubAction {
-  action_type: 'create_pr' | 'create_issue' | 'comment_pr' | 'comment_issue'
+  action_type: 'create_pr' | 'create_issue' | 'comment_pr' | 'comment_issue' | 'commit_file'
   payload: Record<string, unknown>
 }
 
@@ -178,5 +178,36 @@ async function executeAction(
         body: String(p.body ?? ''),
       })
       break
+
+    case 'commit_file': {
+      const filePath = String(p.file_path ?? 'README.md')
+      const content = String(p.content ?? '')
+      const message = String(p.commit_message ?? `Update ${filePath}`)
+      const branch = String(p.branch ?? 'main')
+
+      // Get current file SHA if it exists (required by GitHub for updates)
+      let sha: string | undefined
+      try {
+        const { data: existing } = await octokit.rest.repos.getContent({
+          owner, repo, path: filePath, ref: branch,
+        })
+        if (!Array.isArray(existing) && existing.type === 'file') {
+          sha = existing.sha
+        }
+      } catch {
+        // File doesn't exist yet — create it
+      }
+
+      await octokit.rest.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: filePath,
+        message,
+        content: Buffer.from(content).toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      })
+      break
+    }
   }
 }
