@@ -9,45 +9,56 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
   name: 'propose_github_action',
   description:
-    'Use this when you want to create a PR, open an issue, or comment on GitHub. ' +
-    'Never take GitHub actions directly — always use this tool and wait for founder approval.',
+    'Propose one or more GitHub actions for the founder to approve in a single click. ' +
+    'Pass all steps as an ordered array — they execute in sequence after approval. ' +
+    'To write a file and open a PR, include commit_file as the first action and create_pr as the second. ' +
+    'Never take GitHub actions directly — always use this tool.',
   input_schema: {
     type: 'object' as const,
     properties: {
-      action_type: {
-        type: 'string',
-        enum: ['commit_file', 'create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
-        description: 'The type of GitHub action to perform. To write files and open a PR, call this tool twice: first with commit_file, then with create_pr.',
-      },
       plain_english_description: {
         type: 'string',
-        description: 'Plain English description of what will happen, shown to the founder for approval',
+        description: 'Plain English summary of the full set of actions, shown to the founder for approval',
       },
-      payload: {
-        type: 'object',
-        description:
-          'Action-specific fields. Required fields per action_type:\n' +
-          '- commit_file: { file_path: <string>, content: <string>, commit_message: <string>, branch: <string> }\n' +
-          '- create_pr: { title: <string>, body: <string>, head_branch: <string>, base_branch: <string> }\n' +
-          '- create_issue: { title: <string>, body: <string>, labels: <string[]> }\n' +
-          '- comment_pr: { pr_number: <integer>, body: <string> }\n' +
-          '- comment_issue: { issue_number: <integer>, body: <string> }',
-        properties: {
-          file_path: { type: 'string', description: 'Path of the file to write (commit_file only)' },
-          content: { type: 'string', description: 'Full file content as a string (commit_file only)' },
-          commit_message: { type: 'string', description: 'Git commit message (commit_file only)' },
-          branch: { type: 'string', description: 'Branch to write the file to, e.g. bot/add-readme (commit_file only)' },
-          pr_number: { type: 'integer', description: 'PR number to comment on (comment_pr only)' },
-          issue_number: { type: 'integer', description: 'Issue number to comment on (comment_issue only)' },
-          body: { type: 'string', description: 'Comment or PR/issue body text' },
-          title: { type: 'string', description: 'Title for new PR or issue' },
-          labels: { type: 'array', items: { type: 'string' }, description: 'Labels for new issue' },
-          head_branch: { type: 'string', description: 'Branch to merge from (create_pr only); must match the branch used in commit_file' },
-          base_branch: { type: 'string', description: 'Branch to merge into, usually main (create_pr only)' },
+      actions: {
+        type: 'array',
+        description: 'Ordered list of GitHub actions to execute in sequence after approval.',
+        items: {
+          type: 'object',
+          properties: {
+            action_type: {
+              type: 'string',
+              enum: ['commit_file', 'create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
+            },
+            payload: {
+              type: 'object',
+              description:
+                'Fields per action_type:\n' +
+                '- commit_file: { file_path, content, commit_message, branch } — branch must be like "bot/describe-change"\n' +
+                '- create_pr: { title, body, head_branch, base_branch } — head_branch must match the branch from commit_file\n' +
+                '- create_issue: { title, body, labels[] }\n' +
+                '- comment_pr: { pr_number, body }\n' +
+                '- comment_issue: { issue_number, body }',
+              properties: {
+                file_path: { type: 'string' },
+                content: { type: 'string' },
+                commit_message: { type: 'string' },
+                branch: { type: 'string' },
+                head_branch: { type: 'string' },
+                base_branch: { type: 'string' },
+                title: { type: 'string' },
+                body: { type: 'string' },
+                labels: { type: 'array', items: { type: 'string' } },
+                pr_number: { type: 'integer' },
+                issue_number: { type: 'integer' },
+              },
+            },
+          },
+          required: ['action_type', 'payload'],
         },
       },
     },
-    required: ['action_type', 'plain_english_description', 'payload'],
+    required: ['plain_english_description', 'actions'],
   },
 }
 
@@ -124,9 +135,8 @@ export async function respondToMessage(
 
   if (toolUseBlock) {
     const input = toolUseBlock.input as {
-      action_type: string
       plain_english_description: string
-      payload: Record<string, unknown>
+      actions: Array<{ action_type: string; payload: Record<string, unknown> }>
     }
 
     // Get any text Claude included alongside the tool call
@@ -148,12 +158,7 @@ export async function respondToMessage(
         channel_id: channelId,
         bot_role_id: botRole.id,
         description_md: displayDescription,
-        github_actions: [
-          {
-            action_type: input.action_type,
-            payload: input.payload as Record<string, string | number | boolean | null>,
-          },
-        ] as unknown as import('@/lib/supabase/types').Json,
+        github_actions: input.actions as unknown as import('@/lib/supabase/types').Json,
         status: 'pending',
       })
       .select('id')
