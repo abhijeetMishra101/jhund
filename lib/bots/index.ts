@@ -139,6 +139,9 @@ export async function respondToMessage(
       actions: Array<{ action_type: string; payload: Record<string, unknown> }>
     }
 
+    console.log('[bot:tool_use] channel=%s role=%s actions=%s', channelId, botRole.role_key,
+      JSON.stringify((input.actions ?? []).map((a) => a.action_type)))
+
     // Get any text Claude included alongside the tool call
     const textBlock = response.content.find((b) => b.type === 'text') as
       | Anthropic.TextBlock

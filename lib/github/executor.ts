@@ -84,9 +84,14 @@ export async function executePlanActions(planId: string, workspaceId: string): P
 
   const actions = (plan.github_actions as Json[]).map((a) => a as unknown as GithubAction)
 
+  console.log('[executor] plan=%s repo=%s actions=%s', planId, installation.repo_full_name,
+    JSON.stringify(actions.map((a) => a.action_type)))
+
   try {
     for (const action of actions) {
+      console.log('[executor] running action=%s', action.action_type)
       await executeAction(octokit, owner, repo, action)
+      console.log('[executor] done action=%s', action.action_type)
     }
 
     await supabase
