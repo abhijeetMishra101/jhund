@@ -40,6 +40,23 @@ const BOT_ROLE = {
   created_at: '2024-01-01T00:00:00Z',
 }
 
+// Canonical new-format tool use response (single action)
+function toolUseResponse(actionType: string, payload: Record<string, unknown>, description = 'Do something on GitHub') {
+  return {
+    content: [
+      {
+        type: 'tool_use',
+        name: 'propose_github_action',
+        input: {
+          plain_english_description: description,
+          actions: [{ action_type: actionType, payload }],
+        },
+      },
+    ],
+    stop_reason: 'tool_use',
+  }
+}
+
 // Returns a fluent Supabase chain that resolves to `result` at `.single()`
 function chain(result: { data: unknown; error: unknown }) {
   const obj: Record<string, unknown> = {}
@@ -120,15 +137,73 @@ describe('respondToMessage', () => {
       }
     })
 
+    mockMessagesCreate.mockResolvedValue(
+      toolUseResponse('create_issue', { title: 'Login fails', body: 'Steps…' }, 'Create a bug report titled "Login fails"')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(tablesWritten).toContain('plans')
+    expect(tablesWritten).toContain('messages')
+  })
+
+  it('stores github_actions as the actions array from the tool call', async () => {
+    let storedPlanPayload: Record<string, unknown> | null = null
+    mockServiceFrom.mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(
+        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
+        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
+        : { data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }
+      ),
+      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        if (table === 'plans') storedPlanPayload = payload
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }) }
+      }),
+    }))
+
+    mockMessagesCreate.mockResolvedValue(
+      toolUseResponse('create_issue', { title: 'Bug', body: 'desc', labels: ['bug'] }, 'Open a bug report')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(storedPlanPayload).not.toBeNull()
+    expect(storedPlanPayload!.github_actions).toEqual([
+      { action_type: 'create_issue', payload: { title: 'Bug', body: 'desc', labels: ['bug'] } },
+    ])
+  })
+
+  it('stores multi-step github_actions for commit_file + create_pr in sequence', async () => {
+    let storedPlanPayload: Record<string, unknown> | null = null
+    mockServiceFrom.mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(
+        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
+        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
+        : { data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }
+      ),
+      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        if (table === 'plans') storedPlanPayload = payload
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }) }
+      }),
+    }))
+
+    // Sam proposes both steps in one tool call
     mockMessagesCreate.mockResolvedValue({
       content: [
         {
           type: 'tool_use',
           name: 'propose_github_action',
           input: {
-            action_type: 'create_issue',
-            plain_english_description: 'Create a bug report titled "Login fails"',
-            payload: { title: 'Login fails', body: 'Steps…' },
+            plain_english_description: 'Write README.md and open a pull request',
+            actions: [
+              { action_type: 'commit_file', payload: { file_path: 'README.md', content: '# Project', commit_message: 'Add README', branch: 'bot/add-readme' } },
+              { action_type: 'create_pr', payload: { title: 'Add README.md', body: 'Adds a README', head_branch: 'bot/add-readme', base_branch: 'main' } },
+            ],
           },
         },
       ],
@@ -137,8 +212,11 @@ describe('respondToMessage', () => {
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
-    expect(tablesWritten).toContain('plans')
-    expect(tablesWritten).toContain('messages')
+
+    expect(storedPlanPayload!.github_actions).toEqual([
+      { action_type: 'commit_file', payload: { file_path: 'README.md', content: '# Project', commit_message: 'Add README', branch: 'bot/add-readme' } },
+      { action_type: 'create_pr', payload: { title: 'Add README.md', body: 'Adds a README', head_branch: 'bot/add-readme', base_branch: 'main' } },
+    ])
   })
 
   it('links bot message to plan via plan_id when tool is used', async () => {
@@ -158,20 +236,9 @@ describe('respondToMessage', () => {
       }),
     }))
 
-    mockMessagesCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'tool_use',
-          name: 'propose_github_action',
-          input: {
-            action_type: 'create_issue',
-            plain_english_description: 'Open bug report',
-            payload: { title: 'Bug', body: 'desc' },
-          },
-        },
-      ],
-      stop_reason: 'tool_use',
-    })
+    mockMessagesCreate.mockResolvedValue(
+      toolUseResponse('create_issue', { title: 'Bug', body: 'desc' }, 'Open bug report')
+    )
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
@@ -214,6 +281,26 @@ describe('respondToMessage', () => {
     expect(mockMessagesCreate).not.toHaveBeenCalled()
   })
 
+  it('throws when tool is called with empty actions array', async () => {
+    mockServiceFrom
+      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
+      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'tool_use',
+          name: 'propose_github_action',
+          input: { plain_english_description: 'Do something', actions: [] },
+        },
+      ],
+      stop_reason: 'tool_use',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('empty actions array')
+  })
+
   it('throws "Failed to create plan" when plan insert returns error', async () => {
     mockServiceFrom.mockImplementation((table: string) => ({
       select: vi.fn().mockReturnThis(),
@@ -229,20 +316,9 @@ describe('respondToMessage', () => {
       }),
     }))
 
-    mockMessagesCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'tool_use',
-          name: 'propose_github_action',
-          input: {
-            action_type: 'create_issue',
-            plain_english_description: 'Create a bug report',
-            payload: { title: 'Bug', body: 'desc' },
-          },
-        },
-      ],
-      stop_reason: 'tool_use',
-    })
+    mockMessagesCreate.mockResolvedValue(
+      toolUseResponse('create_issue', { title: 'Bug', body: 'desc' }, 'Create a bug report')
+    )
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to create plan')
@@ -260,27 +336,15 @@ describe('respondToMessage', () => {
       ),
       insert: vi.fn().mockImplementation(() => {
         insertCallCount++
-        // First insert (plans) succeeds, second (messages) fails
         const data = insertCallCount === 1 ? { id: 'plan-uuid' } : null
         const error = insertCallCount === 2 ? { message: 'message insert failed' } : null
         return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data, error }) }
       }),
     }))
 
-    mockMessagesCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'tool_use',
-          name: 'propose_github_action',
-          input: {
-            action_type: 'create_issue',
-            plain_english_description: 'Create a bug report',
-            payload: { title: 'Bug', body: 'desc' },
-          },
-        },
-      ],
-      stop_reason: 'tool_use',
-    })
+    mockMessagesCreate.mockResolvedValue(
+      toolUseResponse('create_issue', { title: 'Bug', body: 'desc' }, 'Create a bug report')
+    )
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store bot reply')
