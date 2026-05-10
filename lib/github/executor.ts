@@ -138,24 +138,31 @@ async function executeAction(
       break
 
     case 'create_pr': {
-      // Ensure head branch exists — create from default branch if needed
       const headBranch = String(p.head_branch ?? 'bot/new-pr')
       const title = String(p.title ?? 'New PR')
       const body = String(p.body ?? '')
       const baseBranch = String(p.base_branch ?? defaultBranch)
 
-      // Get default branch SHA to create head branch
-      const { data: ref } = await octokit.rest.git.getRef({
-        owner,
-        repo,
-        ref: `heads/${baseBranch}`,
-      })
+      // Get base branch SHA — if it doesn't exist yet (brand-new repo),
+      // bootstrap it from the first available branch (created by commit_file).
+      let baseSha: string
+      try {
+        const { data: baseRef } = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${baseBranch}` })
+        baseSha = baseRef.object.sha
+      } catch {
+        const { data: allRefs } = await octokit.rest.git.listMatchingRefs({ owner, repo, ref: 'heads/' })
+        if (!allRefs.length) throw Object.assign(new Error('No branches in repo'), { status: 404 })
+        baseSha = allRefs[0].object.sha
+        // Create the base branch so the PR has somewhere to land
+        await octokit.rest.git.createRef({ owner, repo, ref: `refs/heads/${baseBranch}`, sha: baseSha })
+      }
 
+      // Ensure head branch exists — skip if commit_file already created it
       await octokit.rest.git.createRef({
         owner,
         repo,
         ref: `refs/heads/${headBranch}`,
-        sha: ref.object.sha,
+        sha: baseSha,
       }).catch(() => {
         // Branch already exists — that's fine
       })
