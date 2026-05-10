@@ -103,10 +103,10 @@ export async function executePlanActions(planId: string, workspaceId: string): P
       .update({ status: 'executed', executed_at: new Date().toISOString() })
       .eq('id', planId)
   } catch (err) {
-    const status = (err as { status?: number }).status
-    const message = githubErrorMessage(status)
-    await supabase.from('plans').update({ status: 'failed', error_message: message } as never).eq('id', planId)
-    // Rethrow with plain-English message so the approve route can post the channel notification
+    const githubStatus = (err as { status?: number }).status
+    const message = githubErrorMessage(githubStatus)
+    console.error('[executor] action failed status=%s message=%s err=%s', githubStatus, message, String(err))
+    await supabase.from('plans').update({ status: 'failed', failure_reason: message } as never).eq('id', planId)
     throw new Error(message)
   }
 }

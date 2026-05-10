@@ -256,7 +256,7 @@ describe('executePlanActions', () => {
 
     const { executePlanActions } = await import('@/lib/github/executor')
     await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('permissions')
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', error_message: expect.stringContaining('permissions') }))
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', failure_reason: expect.stringContaining('permissions') }))
   })
 
   it('sets plan to failed with 404 message and rethrows when GitHub returns 404', async () => {
