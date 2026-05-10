@@ -151,6 +151,11 @@ export async function respondToMessage(
         ? `${introText}\n\n**Proposed action:** ${displayDescription}`
         : `I'd like to: **${displayDescription}**\n\nPlease approve or reject this action.`
 
+    const actions = input.actions ?? []
+    if (!actions.length) {
+      throw new Error('propose_github_action called with an empty actions array — bot configuration issue')
+    }
+
     // Create the plan row first
     const { data: plan, error: planError } = await supabase
       .from('plans')
@@ -158,7 +163,7 @@ export async function respondToMessage(
         channel_id: channelId,
         bot_role_id: botRole.id,
         description_md: displayDescription,
-        github_actions: input.actions as unknown as import('@/lib/supabase/types').Json,
+        github_actions: actions as unknown as import('@/lib/supabase/types').Json,
         status: 'pending',
       })
       .select('id')
