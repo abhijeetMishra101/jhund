@@ -6,12 +6,18 @@ const mockIssuesCreateComment = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 const mockPullsCreate = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 const mockGitGetRef = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { object: { sha: 'abc123' } } }))
 const mockGitCreateRef = vi.hoisted(() => vi.fn().mockResolvedValue({}))
+const mockReposGetContent = vi.hoisted(() => vi.fn())
+const mockReposCreateOrUpdateFileContents = vi.hoisted(() => vi.fn().mockResolvedValue({}))
 
 const mockOctokit = {
   rest: {
     issues: { create: mockIssuesCreate, createComment: mockIssuesCreateComment },
     pulls: { create: mockPullsCreate },
     git: { getRef: mockGitGetRef, createRef: mockGitCreateRef },
+    repos: {
+      getContent: mockReposGetContent,
+      createOrUpdateFileContents: mockReposCreateOrUpdateFileContents,
+    },
   },
 }
 
@@ -378,5 +384,100 @@ describe('executePlanActions', () => {
 
     const { executePlanActions } = await import('@/lib/github/executor')
     await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('went wrong')
+  })
+
+  it('commit_file: creates a new file when it does not exist (no sha)', async () => {
+    mockReposGetContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }))
+
+    const actions = [{
+      action_type: 'commit_file',
+      payload: { file_path: 'README.md', content: 'Hello world', commit_message: 'Add README', branch: 'bot/add-readme' },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockReposGetContent).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', path: 'README.md', ref: 'bot/add-readme' })
+    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith(expect.objectContaining({
+      owner: 'owner',
+      repo: 'repo',
+      path: 'README.md',
+      message: 'Add README',
+      content: Buffer.from('Hello world').toString('base64'),
+      branch: 'bot/add-readme',
+    }))
+    const call = mockReposCreateOrUpdateFileContents.mock.calls[0][0]
+    expect(call).not.toHaveProperty('sha')
+  })
+
+  it('commit_file: updates an existing file passing sha', async () => {
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', sha: 'existingsha456' },
+    })
+
+    const actions = [{
+      action_type: 'commit_file',
+      payload: { file_path: 'src/index.ts', content: 'export {}', commit_message: 'Update index', branch: 'bot/update-index' },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'src/index.ts',
+      sha: 'existingsha456',
+    }))
+  })
+
+  it('commit_file: encodes content as base64', async () => {
+    mockReposGetContent.mockRejectedValueOnce(new Error('Not Found'))
+
+    const content = '# My Readme\n\nSome text here'
+    const actions = [{
+      action_type: 'commit_file',
+      payload: { file_path: 'README.md', content, commit_message: 'docs', branch: 'bot/docs' },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith(expect.objectContaining({
+      content: Buffer.from(content).toString('base64'),
+    }))
+  })
+
+  it('commit_file: uses default values when payload fields are missing', async () => {
+    mockReposGetContent.mockRejectedValueOnce(new Error('Not Found'))
+
+    const actions = [{ action_type: 'commit_file', payload: {} }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'README.md',
+      branch: 'main',
+      message: 'Update README.md',
+    }))
   })
 })
