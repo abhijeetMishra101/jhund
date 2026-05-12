@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
-import { respondToMessage } from '@/lib/bots'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -34,75 +33,102 @@ async function runStandupForWorkspace(workspaceId: string): Promise<void> {
 
   const { data: riley } = await supabase
     .from('bot_roles')
-    .select('id')
+    .select('id, display_name, system_prompt')
     .eq('workspace_id', workspaceId)
     .eq('role_key', 'ops')
     .single()
 
-  // Post Riley's opening message in #standup
-  await supabase.from('messages').insert({
-    channel_id: standupChannel.id,
-    author_type: riley ? 'bot' : 'system',
-    author_id: riley ? riley.id : workspaceId,
-    content: '📋 Good morning — collecting standup updates from the team. Check back shortly.',
-  })
+  // 1. Riley posts the opening standup message in #standup (top-level)
+  const { data: rileyMsg } = await supabase
+    .from('messages')
+    .insert({
+      channel_id: standupChannel.id,
+      author_type: riley ? 'bot' : 'system',
+      author_id: riley ? riley.id : workspaceId,
+      content: '📋 Good morning — collecting standup updates from the team. Check back shortly.',
+    })
+    .select('id')
+    .single()
 
-  // Get all active non-ops, non-standup, non-retro bot channels
-  const { data: activeChannels } = await supabase
-    .from('channels')
-    .select('id, name, display_name, bot_role_id')
+  const rileyMsgId = rileyMsg?.id ?? null
+
+  // Get all active bots in the workspace (excluding ops/Riley)
+  const { data: allBotRoles } = await supabase
+    .from('bot_roles')
+    .select('id, display_name, system_prompt')
     .eq('workspace_id', workspaceId)
-    .eq('archived', false)
-    .neq('name', 'standup')
-    .neq('name', 'retrospective')
-    .not('bot_role_id', 'is', null)
+    .neq('role_key', 'ops')
 
-  if (!activeChannels?.length) return
+  if (!allBotRoles?.length) {
+    await supabase
+      .from('workspaces')
+      .update({ last_standup_at: new Date().toISOString() } as never)
+      .eq('id', workspaceId)
+    return
+  }
 
-  const botChannels = activeChannels.filter((ch) => ch.bot_role_id !== riley?.id)
-  if (!botChannels.length) return
-
-  // Trigger each bot's standup in its own channel sequentially, collect responses
+  // 2. Each bot posts their standup update as a thread reply to Riley's opening message
   const botUpdates: { displayName: string; response: string }[] = []
 
-  for (const ch of botChannels) {
-    await supabase.from('messages').insert({
-      channel_id: ch.id,
-      author_type: 'system',
-      author_id: workspaceId,
-      content: "It's standup time. What are you working on today? Summarise in 2–3 sentences.",
-    })
-
-    await respondToMessage(ch.id, workspaceId).catch((err: unknown) => {
-      console.error('[standup] bot response failed channel=%s: %s', ch.id, err instanceof Error ? err.message : String(err))
-    })
-
-    // Read the bot's response (the most recent bot message in that channel)
-    const { data: latestMsg } = await supabase
+  for (const bot of allBotRoles) {
+    // Insert a system prompt to the bot asking for standup update
+    const { data: promptMsg } = await supabase
       .from('messages')
-      .select('content')
-      .eq('channel_id', ch.id)
-      .eq('author_type', 'bot')
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .insert({
+        channel_id: standupChannel.id,
+        author_type: 'system',
+        author_id: workspaceId,
+        content: "It's standup time. What are you working on today? Summarise in 2–3 sentences.",
+        ...(rileyMsgId ? { parent_id: rileyMsgId } : {}),
+      })
+      .select('id')
       .single()
 
-    if (latestMsg?.content) {
-      botUpdates.push({
-        displayName: ch.display_name,
-        response: latestMsg.content,
+    const promptMsgId = promptMsg?.id ?? null
+
+    // Generate bot update via Claude
+    let botResponse: string | null = null
+    try {
+      const claudeResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 200,
+        system: [{ type: 'text', text: bot.system_prompt, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: "It's standup time. What are you working on today? Summarise in 2–3 sentences." }],
       })
+      const textBlock = claudeResponse.content.find((b) => b.type === 'text')
+      botResponse = textBlock?.type === 'text' ? textBlock.text.trim() : null
+    } catch (err: unknown) {
+      console.error('[standup] Claude failed for bot=%s: %s', bot.id, err instanceof Error ? err.message : String(err))
+    }
+
+    if (botResponse) {
+      // Post bot's update as a thread reply to Riley's opening message
+      await supabase.from('messages').insert({
+        channel_id: standupChannel.id,
+        author_type: 'bot',
+        author_id: bot.id,
+        content: botResponse,
+        ...(rileyMsgId ? { parent_id: rileyMsgId } : {}),
+      })
+
+      botUpdates.push({ displayName: bot.display_name, response: botResponse })
+    }
+
+    // Clean up prompt message (it was only a vehicle to get bot context)
+    if (promptMsgId) {
+      await supabase.from('messages').delete().eq('id', promptMsgId)
     }
   }
 
-  // Riley synthesises all updates into a single digest posted in #standup
-  const digest = await buildStandupDigest(botUpdates)
+  // 3. Riley posts a consolidation summary as a final thread reply
+  const summary = await buildStandupDigest(botUpdates)
 
   await supabase.from('messages').insert({
     channel_id: standupChannel.id,
     author_type: riley ? 'bot' : 'system',
     author_id: riley ? riley.id : workspaceId,
-    content: digest,
+    content: summary,
+    ...(rileyMsgId ? { parent_id: rileyMsgId } : {}),
   })
 
   await supabase

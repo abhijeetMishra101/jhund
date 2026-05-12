@@ -8,8 +8,8 @@ import userEvent from '@testing-library/user-event'
 import { ChannelSidebar } from '@/app/w/[slug]/components/ChannelSidebar'
 
 const CHANNELS = [
-  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: null, position: 0, archived: false, created_at: '' },
-  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: null, position: 1, archived: false, created_at: '' },
+  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: null, position: 0, archived: false, channel_type: 'channel' as const, created_at: '' },
+  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: null, position: 1, archived: false, channel_type: 'channel' as const, created_at: '' },
 ]
 
 function renderSidebar(overrides: Partial<Parameters<typeof ChannelSidebar>[0]> = {}) {

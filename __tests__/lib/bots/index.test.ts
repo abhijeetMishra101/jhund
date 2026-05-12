@@ -37,6 +37,8 @@ const BOT_ROLE = {
   display_name: 'Sam',
   system_prompt: 'You are Sam.',
   avatar_seed: 'sam',
+  status: 'online' as const,
+  status_updated_at: null,
   created_at: '2024-01-01T00:00:00Z',
 }
 
@@ -57,17 +59,43 @@ function toolUseResponse(actionType: string, payload: Record<string, unknown>, d
   }
 }
 
-// Returns a fluent Supabase chain that resolves to `result` at `.single()`
-function chain(result: { data: unknown; error: unknown }) {
-  const obj: Record<string, unknown> = {}
-  obj.select = vi.fn().mockReturnValue(obj)
-  obj.eq = vi.fn().mockReturnValue(obj)
-  obj.order = vi.fn().mockReturnValue(obj)
-  obj.limit = vi.fn().mockReturnValue(obj)
-  obj.single = vi.fn().mockResolvedValue(result)
-  obj.insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue(result) }) })
-  obj.update = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue(result) })
-  return obj
+/**
+ * Standard bot-resolution mocks for `resolveBotForMessage`:
+ *   1. channel_members: .select().eq().order() → [{ bot_role_id, is_primary }]
+ *   2. bot_roles:       .select().in()         → [BOT_ROLE]
+ */
+function setupBotResolutionMocks(memberRows = [{ bot_role_id: BOT_ROLE.id, is_primary: true }]) {
+  // channel_members chain
+  mockServiceFrom.mockReturnValueOnce({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockResolvedValue({ data: memberRows, error: null }),
+  })
+  // bot_roles chain
+  mockServiceFrom.mockReturnValueOnce({
+    select: vi.fn().mockReturnThis(),
+    in: vi.fn().mockResolvedValue({ data: memberRows.length > 0 ? [BOT_ROLE] : [], error: null }),
+  })
+}
+
+/** Messages insert chain */
+function messagesInsertChain(id: string) {
+  return {
+    insert: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id }, error: null }),
+    }),
+  }
+}
+
+/** Failing insert chain */
+function failingInsertChain(errorMsg: string) {
+  return {
+    insert: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: errorMsg } }),
+    }),
+  }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -77,10 +105,8 @@ describe('respondToMessage', () => {
   })
 
   it('stores a plain-text reply and returns message id', async () => {
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null })) // channels
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))                      // bot_roles
-      .mockReturnValueOnce(chain({ data: { id: 'msg-uuid' }, error: null }))           // messages insert
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-uuid'))
 
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'Hello there!' }],
@@ -95,18 +121,14 @@ describe('respondToMessage', () => {
 
   it('plain-text reply is stored without plan_id', async () => {
     let insertedPayload: Record<string, unknown> | null = null
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }),
-        insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-          insertedPayload = payload
-          return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }) }
-        }),
-      })
+
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        insertedPayload = payload
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }) }
+      }),
+    })
 
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'Hello!' }],
@@ -120,21 +142,22 @@ describe('respondToMessage', () => {
 
   it('creates a plan row when Claude uses propose_github_action tool', async () => {
     const tablesWritten: string[] = []
-    mockServiceFrom.mockImplementation((table: string) => {
-      const result =
-        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
-        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
-        : { data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }
 
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue(result),
-        insert: vi.fn().mockImplementation(() => {
-          tablesWritten.push(table)
-          return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }) }
-        }),
-      }
+    setupBotResolutionMocks()
+
+    // plans insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockImplementation(() => {
+        tablesWritten.push('plans')
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }) }
+      }),
+    })
+    // messages insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockImplementation(() => {
+        tablesWritten.push('messages')
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }) }
+      }),
     })
 
     mockMessagesCreate.mockResolvedValue(
@@ -149,19 +172,16 @@ describe('respondToMessage', () => {
 
   it('stores github_actions as the actions array from the tool call', async () => {
     let storedPlanPayload: Record<string, unknown> | null = null
-    mockServiceFrom.mockImplementation((table: string) => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue(
-        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
-        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
-        : { data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }
-      ),
+
+    setupBotResolutionMocks()
+
+    mockServiceFrom.mockReturnValueOnce({
       insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-        if (table === 'plans') storedPlanPayload = payload
+        storedPlanPayload = payload
         return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }) }
       }),
-    }))
+    })
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-uuid'))
 
     mockMessagesCreate.mockResolvedValue(
       toolUseResponse('create_issue', { title: 'Bug', body: 'desc', labels: ['bug'] }, 'Open a bug report')
@@ -178,19 +198,16 @@ describe('respondToMessage', () => {
 
   it('stores multi-step github_actions for commit_file + create_pr in sequence', async () => {
     let storedPlanPayload: Record<string, unknown> | null = null
-    mockServiceFrom.mockImplementation((table: string) => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue(
-        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
-        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
-        : { data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }
-      ),
+
+    setupBotResolutionMocks()
+
+    mockServiceFrom.mockReturnValueOnce({
       insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-        if (table === 'plans') storedPlanPayload = payload
+        storedPlanPayload = payload
         return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }) }
       }),
-    }))
+    })
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-uuid'))
 
     // Sam proposes both steps in one tool call
     mockMessagesCreate.mockResolvedValue({
@@ -221,20 +238,23 @@ describe('respondToMessage', () => {
 
   it('links bot message to plan via plan_id when tool is used', async () => {
     let insertedMsg: Record<string, unknown> | null = null
-    mockServiceFrom.mockImplementation((table: string) => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue(
-        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
-        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
-        : { data: { id: table === 'plans' ? 'plan-uuid' : 'msg-uuid' }, error: null }
-      ),
-      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-        if (table === 'messages') insertedMsg = payload
-        const returnId = table === 'plans' ? 'plan-uuid' : 'msg-uuid'
-        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: returnId }, error: null }) }
+
+    setupBotResolutionMocks()
+
+    // plans insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }),
       }),
-    }))
+    })
+    // messages insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        insertedMsg = payload
+        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'msg-uuid' }, error: null }) }
+      }),
+    })
 
     mockMessagesCreate.mockResolvedValue(
       toolUseResponse('create_issue', { title: 'Bug', body: 'desc' }, 'Open bug report')
@@ -248,10 +268,9 @@ describe('respondToMessage', () => {
   })
 
   it('does NOT call increment_action_count — chat is free regardless of cap', async () => {
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
-      .mockReturnValueOnce(chain({ data: { id: 'msg-uuid' }, error: null }))
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-uuid'))
+
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'Hello!' }],
       stop_reason: 'end_turn',
@@ -263,7 +282,19 @@ describe('respondToMessage', () => {
   })
 
   it('throws when no bot is configured for the channel', async () => {
-    mockServiceFrom.mockReturnValueOnce(chain({ data: { bot_role_id: null }, error: null }))
+    // channel_members: empty → triggers fallback to channels
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    })
+    // channels fallback: no bot_role_id
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { bot_role_id: null }, error: null }),
+    })
+
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('No bot configured')
   })
@@ -272,9 +303,7 @@ describe('respondToMessage', () => {
     const { buildMessageHistory } = await import('@/lib/bots/context')
     vi.mocked(buildMessageHistory).mockResolvedValueOnce([])
 
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
+    setupBotResolutionMocks()
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('No messages to respond to')
@@ -282,9 +311,7 @@ describe('respondToMessage', () => {
   })
 
   it('throws when tool is called with empty actions array', async () => {
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
+    setupBotResolutionMocks()
 
     mockMessagesCreate.mockResolvedValue({
       content: [
@@ -302,19 +329,8 @@ describe('respondToMessage', () => {
   })
 
   it('throws "Failed to create plan" when plan insert returns error', async () => {
-    mockServiceFrom.mockImplementation((table: string) => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue(
-        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
-        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
-        : { data: null, error: null }
-      ),
-      insert: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB insert failed' } }),
-      }),
-    }))
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('DB insert failed'))
 
     mockMessagesCreate.mockResolvedValue(
       toolUseResponse('create_issue', { title: 'Bug', body: 'desc' }, 'Create a bug report')
@@ -325,22 +341,17 @@ describe('respondToMessage', () => {
   })
 
   it('throws "Failed to store bot reply" when message insert fails after tool use', async () => {
-    let insertCallCount = 0
-    mockServiceFrom.mockImplementation((table: string) => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue(
-        table === 'channels' ? { data: { bot_role_id: BOT_ROLE.id }, error: null }
-        : table === 'bot_roles' ? { data: BOT_ROLE, error: null }
-        : { data: null, error: null }
-      ),
-      insert: vi.fn().mockImplementation(() => {
-        insertCallCount++
-        const data = insertCallCount === 1 ? { id: 'plan-uuid' } : null
-        const error = insertCallCount === 2 ? { message: 'message insert failed' } : null
-        return { select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data, error }) }
+    setupBotResolutionMocks()
+
+    // plans insert succeeds
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'plan-uuid' }, error: null }),
       }),
-    }))
+    })
+    // messages insert fails
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('message insert failed'))
 
     mockMessagesCreate.mockResolvedValue(
       toolUseResponse('create_issue', { title: 'Bug', body: 'desc' }, 'Create a bug report')
@@ -351,18 +362,8 @@ describe('respondToMessage', () => {
   })
 
   it('throws "Failed to store bot reply" when plain text message insert fails', async () => {
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: null }),
-        insert: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: null, error: { message: 'insert failed' } }),
-        }),
-      })
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('insert failed'))
 
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'Hello there!' }],
@@ -374,9 +375,8 @@ describe('respondToMessage', () => {
   })
 
   it('throws when Claude returns empty text', async () => {
-    mockServiceFrom
-      .mockReturnValueOnce(chain({ data: { bot_role_id: BOT_ROLE.id }, error: null }))
-      .mockReturnValueOnce(chain({ data: BOT_ROLE, error: null }))
+    setupBotResolutionMocks()
+
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: 'text', text: '   ' }],
       stop_reason: 'end_turn',

@@ -3,6 +3,30 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      channel_members: {
+        Row: {
+          id: string
+          channel_id: string
+          bot_role_id: string
+          is_primary: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          channel_id: string
+          bot_role_id: string
+          is_primary?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          channel_id?: string
+          bot_role_id?: string
+          is_primary?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       workspaces: {
         Row: {
           id: string
@@ -78,6 +102,7 @@ export type Database = {
           bot_role_id: string | null
           position: number
           archived: boolean
+          channel_type: 'channel' | 'dm' | 'standup' | 'retrospective'
           created_at: string
         }
         Insert: {
@@ -88,6 +113,7 @@ export type Database = {
           bot_role_id?: string | null
           position?: number
           archived?: boolean
+          channel_type?: 'channel' | 'dm' | 'standup' | 'retrospective'
           created_at?: string
         }
         Update: {
@@ -98,6 +124,7 @@ export type Database = {
           bot_role_id?: string | null
           position?: number
           archived?: boolean
+          channel_type?: 'channel' | 'dm' | 'standup' | 'retrospective'
           created_at?: string
         }
         Relationships: []
@@ -110,6 +137,8 @@ export type Database = {
           author_id: string
           content: string
           plan_id: string | null
+          parent_id: string | null
+          reply_count: number
           created_at: string
         }
         Insert: {
@@ -119,6 +148,8 @@ export type Database = {
           author_id: string
           content: string
           plan_id?: string | null
+          parent_id?: string | null
+          reply_count?: number
           created_at?: string
         }
         Update: {
@@ -128,6 +159,8 @@ export type Database = {
           author_id?: string
           content?: string
           plan_id?: string | null
+          parent_id?: string | null
+          reply_count?: number
           created_at?: string
         }
         Relationships: []
@@ -140,6 +173,8 @@ export type Database = {
           display_name: string
           system_prompt: string
           avatar_seed: string
+          status: 'online' | 'busy' | 'offline'
+          status_updated_at: string | null
           created_at: string
         }
         Insert: {
@@ -149,6 +184,8 @@ export type Database = {
           display_name: string
           system_prompt: string
           avatar_seed: string
+          status?: 'online' | 'busy' | 'offline'
+          status_updated_at?: string | null
           created_at?: string
         }
         Update: {
@@ -158,6 +195,8 @@ export type Database = {
           display_name?: string
           system_prompt?: string
           avatar_seed?: string
+          status?: 'online' | 'busy' | 'offline'
+          status_updated_at?: string | null
           created_at?: string
         }
         Relationships: []
@@ -294,3 +333,4 @@ export type BotRole = Database['public']['Tables']['bot_roles']['Row']
 export type Plan = Database['public']['Tables']['plans']['Row']
 export type GithubInstallation = Database['public']['Tables']['github_installations']['Row']
 export type GithubTrigger = Database['public']['Tables']['github_triggers']['Row']
+export type ChannelMember = Database['public']['Tables']['channel_members']['Row']

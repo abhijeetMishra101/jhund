@@ -128,6 +128,7 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     const optimistic: Message = {
       id: optimisticId, channel_id: activeChannelId,
       author_type: 'user', author_id: '', content, plan_id: null,
+      parent_id: null, reply_count: 0,
       created_at: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, optimistic])
