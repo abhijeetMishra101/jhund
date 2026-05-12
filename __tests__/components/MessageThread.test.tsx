@@ -30,7 +30,6 @@ function baseMessage(overrides: Partial<MessageWithThread> = {}): MessageWithThr
     parent_id: null,
     reply_count: 0,
     created_at: '2024-01-01T00:00:00Z',
-    reply_count: 0,
     ...overrides,
   }
 }

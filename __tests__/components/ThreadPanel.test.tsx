@@ -37,6 +37,7 @@ function makeParent(overrides: Partial<MessageWithThread> = {}): MessageWithThre
     author_id: 'bot-1',
     content: 'This is the parent message',
     plan_id: null,
+    parent_id: null,
     created_at: new Date().toISOString(),
     reply_count: 2,
     ...overrides,

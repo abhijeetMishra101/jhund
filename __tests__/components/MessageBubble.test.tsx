@@ -27,6 +27,7 @@ function baseMsg(overrides: Partial<MessageWithThread> = {}): MessageWithThread 
     author_id: 'bot-1',
     content: 'Hello founder',
     plan_id: null,
+    parent_id: null,
     created_at: new Date().toISOString(),
     reply_count: 0,
     ...overrides,

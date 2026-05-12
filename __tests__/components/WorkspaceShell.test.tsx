@@ -75,7 +75,6 @@ function makeMsg(overrides: Partial<import('@/lib/supabase/types').MessageWithTh
     content: 'Hello founder', plan_id: null,
     parent_id: null, reply_count: 0,
     created_at: '2024-01-01T00:00:00Z',
-    reply_count: 0,
     ...overrides,
   }
 }

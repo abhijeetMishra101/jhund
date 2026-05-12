@@ -151,7 +151,6 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
       author_type: 'user', author_id: '', content, plan_id: null,
       parent_id: null, reply_count: 0,
       created_at: new Date().toISOString(),
-      reply_count: 0,
     }
     setMessages((prev) => [...prev, optimistic])
 

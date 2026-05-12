@@ -352,8 +352,6 @@ export interface ChannelWithMembers extends Channel {
   members: ChannelMember[]
 }
 
-// Extended message with thread fields
-export interface MessageWithThread extends Message {
-  parent_id?: string
-  reply_count: number
-}
+// MessageWithThread is Message — parent_id and reply_count are already
+// present in the DB-generated Row type after the Phase 14 migration.
+export type MessageWithThread = Message
