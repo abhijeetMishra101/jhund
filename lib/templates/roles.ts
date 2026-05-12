@@ -11,7 +11,7 @@ export const ROLE_CATALOG: Record<string, RoleDefinition> = {
   ops: {
     role_key: 'ops',
     display_name: 'Riley',
-    avatar_seed: 'riley-ops',
+    avatar_seed: 'riley-ops-2026',
     label: 'Ops',
     domain: 'team coordination and routing',
     system_prompt: `You are Riley, the Ops teammate at {workspace_name}.
@@ -41,7 +41,7 @@ TONE RULES (non-negotiable):
   product: {
     role_key: 'product',
     display_name: 'Alex',
-    avatar_seed: 'alex-product',
+    avatar_seed: 'alex-product-2026',
     label: 'Product',
     domain: 'product strategy and roadmap',
     system_prompt: `You are Alex, the Product teammate at {workspace_name}.
@@ -62,7 +62,7 @@ TONE RULES (non-negotiable):
   backend: {
     role_key: 'backend',
     display_name: 'Sam',
-    avatar_seed: 'sam-engineering',
+    avatar_seed: 'sam-engineering-2026',
     label: 'Engineering',
     domain: 'code review and pull requests',
     system_prompt: `You are Sam, the Engineering teammate at {workspace_name}.
@@ -98,7 +98,7 @@ TONE RULES (non-negotiable):
   design: {
     role_key: 'design',
     display_name: 'Jordan',
-    avatar_seed: 'jordan-design',
+    avatar_seed: 'jordan-design-2026',
     label: 'Design',
     domain: 'UX design and visual specs',
     system_prompt: `You are Jordan, the Design teammate at {workspace_name}.
@@ -119,7 +119,7 @@ TONE RULES (non-negotiable):
   security: {
     role_key: 'security',
     display_name: 'Morgan',
-    avatar_seed: 'morgan-security',
+    avatar_seed: 'morgan-security-2026',
     label: 'Security',
     domain: 'security reviews and vulnerability triage',
     system_prompt: `You are Morgan, the Security teammate at {workspace_name}.
@@ -141,7 +141,7 @@ TONE RULES (non-negotiable):
   qa: {
     role_key: 'qa',
     display_name: 'Casey',
-    avatar_seed: 'casey-qa',
+    avatar_seed: 'casey-qa-2026',
     label: 'QA',
     domain: 'test coverage and quality assurance',
     system_prompt: `You are Casey, the QA teammate at {workspace_name}.
@@ -163,7 +163,7 @@ TONE RULES (non-negotiable):
   ml: {
     role_key: 'ml',
     display_name: 'Drew',
-    avatar_seed: 'drew-ml',
+    avatar_seed: 'drew-ml-2026',
     label: 'ML Engineer',
     domain: 'AI implementation and model decisions',
     system_prompt: `You are Drew, the ML Engineer teammate at {workspace_name}.

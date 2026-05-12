@@ -4,8 +4,10 @@
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MessageThread } from '@/app/w/[slug]/components/MessageThread'
 import { createRef } from 'react'
+import type { MessageWithThread } from '@/lib/supabase/types'
 
 // PlanCard fetches from /api/plans/:id — mock fetch globally
 beforeEach(() => {
@@ -15,9 +17,9 @@ beforeEach(() => {
   } as Response)
 })
 
-const BOT_ROLE_MAP = { 'bot-id': { id: 'bot-id', display_name: 'Riley' } }
+const BOT_ROLE_MAP = { 'bot-id': { id: 'bot-id', display_name: 'Riley', avatar_seed: 'riley-ops-2026' } }
 
-function baseMessage(overrides = {}) {
+function baseMessage(overrides: Partial<MessageWithThread> = {}): MessageWithThread {
   return {
     id: 'msg-1',
     channel_id: 'ch-1',
@@ -66,5 +68,35 @@ describe('MessageThread', () => {
     render(<MessageThread messages={[baseMessage()]} loading={false} botRoleMap={BOT_ROLE_MAP} onPlanAction={vi.fn()} bottomRef={bottomRef} />)
     expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
     expect(screen.queryByText(/No messages yet/)).not.toBeInTheDocument()
+  })
+
+  it('calls onOpenThread when "N replies" link is clicked', async () => {
+    const onOpenThread = vi.fn()
+    const msg = baseMessage({ reply_count: 3 })
+    render(
+      <MessageThread
+        messages={[msg]}
+        loading={false}
+        botRoleMap={BOT_ROLE_MAP}
+        onPlanAction={vi.fn()}
+        onOpenThread={onOpenThread}
+        bottomRef={bottomRef}
+      />
+    )
+    await userEvent.click(screen.getByTestId('thread-link'))
+    expect(onOpenThread).toHaveBeenCalledWith(msg)
+  })
+
+  it('does not show thread link when reply_count is 0', () => {
+    render(
+      <MessageThread
+        messages={[baseMessage({ reply_count: 0 })]}
+        loading={false}
+        botRoleMap={BOT_ROLE_MAP}
+        onPlanAction={vi.fn()}
+        bottomRef={bottomRef}
+      />
+    )
+    expect(screen.queryByTestId('thread-link')).not.toBeInTheDocument()
   })
 })

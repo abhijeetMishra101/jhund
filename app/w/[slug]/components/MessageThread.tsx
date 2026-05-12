@@ -1,23 +1,25 @@
 'use client'
 
-import type { Message } from '@/lib/supabase/types'
+import type { MessageWithThread } from '@/lib/supabase/types'
 import type { PlanStatus } from './types'
 import { MessageBubble } from './MessageBubble'
 
 interface BotRoleSummary {
   id: string
   display_name: string
+  avatar_seed: string
 }
 
 interface Props {
-  messages: Message[]
+  messages: MessageWithThread[]
   loading: boolean
   botRoleMap: Record<string, BotRoleSummary>
   onPlanAction: (planId: string, status: PlanStatus) => void
+  onOpenThread?: (message: MessageWithThread) => void
   bottomRef: React.RefObject<HTMLDivElement>
 }
 
-export function MessageThread({ messages, loading, botRoleMap, onPlanAction, bottomRef }: Props) {
+export function MessageThread({ messages, loading, botRoleMap, onPlanAction, onOpenThread, bottomRef }: Props) {
   return (
     <main className="flex-1 overflow-y-auto bg-white px-4 py-4">
       {loading ? (
@@ -34,6 +36,7 @@ export function MessageThread({ messages, loading, botRoleMap, onPlanAction, bot
               message={msg}
               botRole={botRoleMap[msg.author_id]}
               onPlanAction={onPlanAction}
+              onOpenThread={onOpenThread}
             />
           ))}
         </div>

@@ -53,13 +53,22 @@ const WORKSPACE = {
 }
 
 const CHANNELS = [
-  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: 'bot-1', position: 0, archived: false, channel_type: 'channel' as const, created_at: '' },
-  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: 'bot-2', position: 1, archived: false, channel_type: 'channel' as const, created_at: '' },
+  {
+    id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1',
+    bot_role_id: 'bot-1', position: 0, archived: false, created_at: '',
+    channel_type: 'channel' as const,
+    members: [{ bot_role_id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley-ops-2026', role_key: 'ops', is_primary: true, status: 'online' as const }],
+  },
+  {
+    id: 'ch-2', name: 'product', display_name: 'Product', workspace_id: 'ws-1',
+    bot_role_id: 'bot-2', position: 1, archived: false, created_at: '',
+    channel_type: 'channel' as const, members: [],
+  },
 ]
 
-const BOT_ROLES = [{ id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley' }]
+const BOT_ROLES = [{ id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley-ops-2026' }]
 
-function makeMsg(overrides = {}) {
+function makeMsg(overrides: Partial<import('@/lib/supabase/types').MessageWithThread> = {}) {
   return {
     id: 'msg-1', channel_id: 'ch-1',
     author_type: 'bot' as const, author_id: 'bot-1',
@@ -370,5 +379,54 @@ describe('WorkspaceShell — reset action cap', () => {
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/workspace/reset-cap', expect.objectContaining({ method: 'POST' })))
     await waitFor(() => expect(screen.getByText('0 / 50 actions used')).toBeInTheDocument())
+  })
+})
+
+describe('WorkspaceShell — openDm', () => {
+  beforeEach(() => { vi.clearAllMocks(); vi.useRealTimers() })
+
+  it('calls POST /api/channels to open a DM and navigates to it', async () => {
+    const dmChannel = {
+      id: 'dm-riley', name: 'dm-ops', display_name: 'Riley', workspace_id: 'ws-1',
+      bot_role_id: 'bot-1', position: 99, archived: false, created_at: '',
+      channel_type: 'dm' as const, members: [],
+    }
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response)  // initial ch-1 load
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => dmChannel } as Response)  // openDm POST
+      .mockResolvedValue({ ok: true, status: 200, json: async () => [] } as Response) // subsequent fetches
+
+    renderShell()
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    // Click DM contact in sidebar (Sam is a member of Engineering — appears in DMs section)
+    const dmBtn = screen.getByTestId('dm-bot-1')
+    await userEvent.click(dmBtn)
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/channels', expect.objectContaining({ method: 'POST' }))
+    })
+  })
+
+  it('handles 409 conflict on openDm by navigating to the existing channel', async () => {
+    const existingDm = {
+      id: 'dm-existing', name: 'dm-ops', display_name: 'Riley', workspace_id: 'ws-1',
+      bot_role_id: 'bot-1', position: 99, archived: false, created_at: '',
+      channel_type: 'dm' as const, members: [],
+    }
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response)  // initial load
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => existingDm } as Response)  // 409 conflict
+      .mockResolvedValue({ ok: true, status: 200, json: async () => [] } as Response)
+
+    renderShell()
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    const dmBtn = screen.getByTestId('dm-bot-1')
+    await userEvent.click(dmBtn)
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/channels', expect.objectContaining({ method: 'POST' }))
+    })
   })
 })
