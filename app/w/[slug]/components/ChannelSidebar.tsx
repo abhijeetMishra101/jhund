@@ -55,9 +55,12 @@ export function ChannelSidebar({
   const regularChannels = channels.filter((c) => c.channel_type !== 'dm')
   const dmChannels = channels.filter((c) => c.channel_type === 'dm')
 
-  // Collect unique bots across all channels for the DM section
-  // Show all bots from non-DM channels as DM-able contacts
-  const allMembers = regularChannels.flatMap((c) => c.members)
+  // Collect unique bots: from regular channels (potential DM contacts) +
+  // from existing DM channels (already have a DM open). Deduplication handled below.
+  const allMembers = [
+    ...regularChannels.flatMap((c) => c.members),
+    ...dmChannels.flatMap((c) => c.members),
+  ]
   const seenBotIds = new Set<string>()
   const uniqueBots = allMembers.filter((m) => {
     if (seenBotIds.has(m.bot_role_id)) return false
