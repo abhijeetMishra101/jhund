@@ -53,19 +53,29 @@ const WORKSPACE = {
 }
 
 const CHANNELS = [
-  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: 'bot-1', position: 0, archived: false, channel_type: 'channel' as const, created_at: '' },
-  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: 'bot-2', position: 1, archived: false, channel_type: 'channel' as const, created_at: '' },
+  {
+    id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1',
+    bot_role_id: 'bot-1', position: 0, archived: false, created_at: '',
+    channel_type: 'channel' as const,
+    members: [{ bot_role_id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley-ops-2026', role_key: 'ops', is_primary: true, status: 'online' as const }],
+  },
+  {
+    id: 'ch-2', name: 'product', display_name: 'Product', workspace_id: 'ws-1',
+    bot_role_id: 'bot-2', position: 1, archived: false, created_at: '',
+    channel_type: 'channel' as const, members: [],
+  },
 ]
 
-const BOT_ROLES = [{ id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley' }]
+const BOT_ROLES = [{ id: 'bot-1', display_name: 'Riley', avatar_seed: 'riley-ops-2026' }]
 
-function makeMsg(overrides = {}) {
+function makeMsg(overrides: Partial<import('@/lib/supabase/types').MessageWithThread> = {}) {
   return {
     id: 'msg-1', channel_id: 'ch-1',
     author_type: 'bot' as const, author_id: 'bot-1',
     content: 'Hello founder', plan_id: null,
     parent_id: null, reply_count: 0,
     created_at: '2024-01-01T00:00:00Z',
+    reply_count: 0,
     ...overrides,
   }
 }

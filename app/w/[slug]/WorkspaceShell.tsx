@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Workspace, Channel, Message } from '@/lib/supabase/types'
+import type { Workspace, MessageWithThread, ChannelWithMembers, Channel } from '@/lib/supabase/types'
 import type { PlanStatus } from './components/types'
 import { ChannelSidebar } from './components/ChannelSidebar'
 import { MessageThread } from './components/MessageThread'
 import { MessageInput } from './components/MessageInput'
+import { ThreadPanel } from './components/ThreadPanel'
+import { BotAvatar } from './components/BotAvatar'
+import { PresenceProvider, usePresence } from './components/PresenceContext'
+import Link from 'next/link'
 
 const POLL_INTERVAL_MS = 3000
 
@@ -18,24 +22,40 @@ interface BotRoleSummary {
 
 interface Props {
   workspace: Workspace
-  channels: Channel[]
+  /** Accept plain Channel[] (from page.tsx) or ChannelWithMembers[] (from new API) */
+  channels: Channel[] | ChannelWithMembers[]
   botRoles: BotRoleSummary[]
 }
 
-export default function WorkspaceShell({ workspace, channels, botRoles }: Props) {
+/** Coerce a Channel (or ChannelWithMembers) into a full ChannelWithMembers */
+function normalizeChannel(ch: Channel | ChannelWithMembers): ChannelWithMembers {
+  if ('channel_type' in ch && 'members' in ch) return ch as ChannelWithMembers
+  return {
+    ...(ch as Channel),
+    channel_type: 'channel',
+    members: [],
+  }
+}
+
+function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Props) {
   const botRoleMap = Object.fromEntries(botRoles.map((b) => [b.id, b]))
-  const [activeChannelId, setActiveChannelId] = useState<string>(channels[0]?.id ?? '')
-  const [messages, setMessages] = useState<Message[]>([])
+  const normalizedChannels = rawChannels.map(normalizeChannel)
+  const [activeChannelId, setActiveChannelId] = useState<string>(normalizedChannels[0]?.id ?? '')
+  const [messages, setMessages] = useState<MessageWithThread[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [sending, setSending] = useState(false)
   const [actionsUsed, setActionsUsed] = useState(workspace.actions_used)
   const [waitingForBot, setWaitingForBot] = useState(false)
+  const [threadMessage, setThreadMessage] = useState<MessageWithThread | null>(null)
+  const [allChannels, setAllChannels] = useState<ChannelWithMembers[]>(normalizedChannels)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const { markBotActive } = usePresence()
+
   const actionCap = workspace.action_cap
-  const activeChannel = channels.find((c) => c.id === activeChannelId)
+  const activeChannel = allChannels.find((c) => c.id === activeChannelId)
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true)
@@ -64,15 +84,16 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
         event: 'INSERT', schema: 'public', table: 'messages',
         filter: `channel_id=eq.${activeChannelId}`,
       }, (payload) => {
-        const newMsg = payload.new as Message
+        const newMsg = payload.new as MessageWithThread
         setMessages((prev) => prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg])
         if (newMsg.author_type === 'bot') {
           setWaitingForBot(false)
+          if (newMsg.author_id) markBotActive(newMsg.author_id)
         }
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [activeChannelId])
+  }, [activeChannelId, markBotActive])
 
   // Background refresh every 5 s — catches webhook-triggered messages
   useEffect(() => {
@@ -103,7 +124,7 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     const poll = async () => {
       const res = await fetch(`/api/messages/${activeChannelId}`)
       if (!res.ok) return
-      const data: Message[] = await res.json()
+      const data: MessageWithThread[] = await res.json()
       const last = data[data.length - 1]
       if (last?.author_type === 'bot') {
         setMessages(data)
@@ -125,11 +146,12 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     setInputValue('')
 
     const optimisticId = `optimistic-${Date.now()}`
-    const optimistic: Message = {
+    const optimistic: MessageWithThread = {
       id: optimisticId, channel_id: activeChannelId,
       author_type: 'user', author_id: '', content, plan_id: null,
       parent_id: null, reply_count: 0,
       created_at: new Date().toISOString(),
+      reply_count: 0,
     }
     setMessages((prev) => [...prev, optimistic])
 
@@ -162,25 +184,74 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
     }
   }
 
+  /** Create or navigate to a DM channel for a given bot */
+  const openDm = async (botRoleId: string, roleKey: string) => {
+    const res = await fetch('/api/channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel_type: 'dm',
+        bot_role_id: botRoleId,
+        name: `dm-${roleKey}`,
+      }),
+    })
+    if (res.ok || res.status === 409) {
+      const data = await res.json()
+      const newChannel: ChannelWithMembers = data
+      // Add to local channel list if not already present
+      setAllChannels((prev) =>
+        prev.some((c) => c.id === newChannel.id) ? prev : [...prev, newChannel]
+      )
+      setActiveChannelId(newChannel.id)
+    }
+  }
+
   const pctUsed = Math.round((actionsUsed / actionCap) * 100)
+
+  // Active channel members (for header + input placeholder)
+  const activeMembers = activeChannel?.members ?? []
 
   return (
     <div className="flex h-screen overflow-hidden">
       <ChannelSidebar
         workspaceName={workspace.name}
         workspaceSlug={workspace.slug}
-        channels={channels}
+        channels={allChannels}
         activeChannelId={activeChannelId}
         actionsUsed={actionsUsed}
         actionCap={actionCap}
         onSelect={setActiveChannelId}
+        onOpenDm={openDm}
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <header className="h-12 shrink-0 border-b border-gray-200 bg-white flex items-center px-4 gap-3">
           <h2 className="text-sm font-semibold text-gray-900">
             # {activeChannel?.display_name ?? ''}
           </h2>
+
+          {/* Member avatars in header */}
+          {activeMembers.length > 0 && (
+            <div className="flex items-center gap-2">
+              {activeMembers.map((m) => (
+                <div key={m.bot_role_id} className="flex items-center gap-1">
+                  <BotAvatar
+                    seed={m.avatar_seed}
+                    displayName={m.display_name}
+                    size="md"
+                  />
+                  <span className="text-xs text-gray-600">{m.display_name}</span>
+                </div>
+              ))}
+              <Link
+                href={`/w/${workspace.slug}/settings`}
+                className="text-xs text-indigo-600 hover:underline ml-1"
+              >
+                + Add teammate
+              </Link>
+            </div>
+          )}
+
           <div className="flex-1" />
           <div className="flex items-center gap-2">
             <span
@@ -210,6 +281,7 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
           loading={loadingMessages}
           botRoleMap={botRoleMap}
           onPlanAction={(_planId: string, _status: PlanStatus) => fetchMessages(activeChannelId)}
+          onOpenThread={setThreadMessage}
           bottomRef={bottomRef}
         />
 
@@ -219,8 +291,36 @@ export default function WorkspaceShell({ workspace, channels, botRoles }: Props)
           onChange={setInputValue}
           onSend={sendMessage}
           sending={sending}
+          channelMembers={activeMembers}
         />
       </div>
+
+      {/* Thread panel — slides in from right */}
+      {threadMessage && activeChannelId && (
+        <ThreadPanel
+          parentMessage={threadMessage}
+          channelId={activeChannelId}
+          botRoleMap={botRoleMap}
+          onClose={() => setThreadMessage(null)}
+          onPlanAction={(_planId: string, _status: PlanStatus) => fetchMessages(activeChannelId)}
+        />
+      )}
     </div>
+  )
+}
+
+export default function WorkspaceShell(props: Props) {
+  // Build initial presence map from channel members (only if channels are enriched)
+  const initial: Record<string, import('@/lib/supabase/types').PresenceStatus> = {}
+  for (const ch of props.channels) {
+    const members = 'members' in ch ? (ch as ChannelWithMembers).members : []
+    for (const m of members) {
+      initial[m.bot_role_id] = m.status
+    }
+  }
+  return (
+    <PresenceProvider initial={initial}>
+      <WorkspaceShellInner {...props} />
+    </PresenceProvider>
   )
 }

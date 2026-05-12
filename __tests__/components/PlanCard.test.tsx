@@ -165,6 +165,7 @@ describe('MessageBubble — PlanCard wiring', () => {
     parent_id: null,
     reply_count: 0,
     created_at: '2024-01-01T00:00:00Z',
+    reply_count: 0,
   }
 
   it('renders PlanCard below a bot message that has a plan_id', async () => {

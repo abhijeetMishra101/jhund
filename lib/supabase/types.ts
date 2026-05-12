@@ -333,4 +333,27 @@ export type BotRole = Database['public']['Tables']['bot_roles']['Row']
 export type Plan = Database['public']['Tables']['plans']['Row']
 export type GithubInstallation = Database['public']['Tables']['github_installations']['Row']
 export type GithubTrigger = Database['public']['Tables']['github_triggers']['Row']
-export type ChannelMember = Database['public']['Tables']['channel_members']['Row']
+
+// Phase 14 — extended API shapes (from new backend endpoints)
+export type PresenceStatus = 'online' | 'busy' | 'offline'
+export type ChannelType = 'channel' | 'dm' | 'standup' | 'retrospective'
+
+export interface ChannelMember {
+  bot_role_id: string
+  display_name: string
+  avatar_seed: string
+  role_key: string
+  is_primary: boolean
+  status: PresenceStatus
+}
+
+export interface ChannelWithMembers extends Channel {
+  channel_type: ChannelType
+  members: ChannelMember[]
+}
+
+// Extended message with thread fields
+export interface MessageWithThread extends Message {
+  parent_id?: string
+  reply_count: number
+}
