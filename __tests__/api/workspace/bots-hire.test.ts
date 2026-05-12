@@ -134,7 +134,7 @@ describe('POST /api/workspace/bots (hire)', () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
 
     const newBot = { id: BOT_ID, workspace_id: WORKSPACE_ID, role_key: 'backend', display_name: 'Sam' }
-    const newChannel = { id: CHANNEL_ID, workspace_id: WORKSPACE_ID, name: 'engineering', display_name: 'Engineering', bot_role_id: BOT_ID, position: 1, archived: false, created_at: '' }
+    const newChannel = { id: CHANNEL_ID, workspace_id: WORKSPACE_ID, name: 'engineering', display_name: 'Engineering', bot_role_id: BOT_ID, position: 1, archived: false, channel_type: 'channel' as const, created_at: '' }
 
     const selectSingleChain = (data: unknown) => ({
       select: vi.fn().mockReturnThis(),

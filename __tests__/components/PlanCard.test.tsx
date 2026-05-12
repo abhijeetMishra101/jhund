@@ -162,6 +162,8 @@ describe('MessageBubble — PlanCard wiring', () => {
     channel_id: 'ch-1',
     author_id: 'bot-id',
     content: 'I will open a GitHub issue.',
+    parent_id: null,
+    reply_count: 0,
     created_at: '2024-01-01T00:00:00Z',
   }
 

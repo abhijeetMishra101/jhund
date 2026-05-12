@@ -3,13 +3,13 @@
  */
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChannelSidebar } from '@/app/w/[slug]/components/ChannelSidebar'
 
 const CHANNELS = [
-  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: null, position: 0, archived: false, created_at: '' },
-  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: null, position: 1, archived: false, created_at: '' },
+  { id: 'ch-1', name: 'engineering', display_name: 'Engineering', workspace_id: 'ws-1', bot_role_id: null, position: 0, archived: false, channel_type: 'channel' as const, created_at: '' },
+  { id: 'ch-2', name: 'product',     display_name: 'Product',     workspace_id: 'ws-1', bot_role_id: null, position: 1, archived: false, channel_type: 'channel' as const, created_at: '' },
 ]
 
 function renderSidebar(overrides: Partial<Parameters<typeof ChannelSidebar>[0]> = {}) {
@@ -58,5 +58,31 @@ describe('ChannelSidebar', () => {
   it('renders empty channel list gracefully', () => {
     renderSidebar({ channels: [] })
     expect(screen.queryByTestId(/^channel-/)).not.toBeInTheDocument()
+  })
+
+  it('changes background on mouseEnter for inactive channel', () => {
+    renderSidebar({ activeChannelId: 'ch-1' })
+    const inactiveBtn = screen.getByTestId('channel-ch-2')
+    fireEvent.mouseEnter(inactiveBtn)
+    expect(inactiveBtn.style.backgroundColor).toBe('rgb(39, 41, 45)')
+  })
+
+  it('restores background on mouseLeave for inactive channel', () => {
+    renderSidebar({ activeChannelId: 'ch-1' })
+    const inactiveBtn = screen.getByTestId('channel-ch-2')
+    fireEvent.mouseEnter(inactiveBtn)
+    fireEvent.mouseLeave(inactiveBtn)
+    expect(inactiveBtn.style.backgroundColor).toBe('transparent')
+  })
+
+  it('does not change background on hover for active channel', () => {
+    renderSidebar({ activeChannelId: 'ch-1' })
+    const activeBtn = screen.getByTestId('channel-ch-1')
+    const initialBg = activeBtn.style.backgroundColor
+    fireEvent.mouseEnter(activeBtn)
+    // Active channel hover should NOT change its background
+    expect(activeBtn.style.backgroundColor).toBe(initialBg)
+    fireEvent.mouseLeave(activeBtn)
+    expect(activeBtn.style.backgroundColor).toBe(initialBg)
   })
 })

@@ -86,24 +86,84 @@ export async function getBotForChannel(channelId: string): Promise<BotRole | nul
 }
 
 /**
+ * Resolves which bot should respond to a message in a channel.
+ *
+ * Multi-bot routing rules:
+ * - If the message starts with @Name, route to the named bot (case-insensitive)
+ * - Otherwise route to the primary bot (is_primary = true) in channel_members
+ * - Falls back to channels.bot_role_id if no channel_members rows exist
+ */
+export async function resolveBotForMessage(
+  channelId: string,
+  messageContent?: string
+): Promise<BotRole | null> {
+  const supabase = createServiceClient()
+
+  // Fetch all members of this channel ordered by insert time (primary first)
+  const { data: memberRows } = await supabase
+    .from('channel_members')
+    .select('bot_role_id, is_primary')
+    .eq('channel_id', channelId)
+    .order('created_at', { ascending: true })
+
+  if (!memberRows || memberRows.length === 0) {
+    // Fallback: legacy single-bot via channels.bot_role_id
+    return getBotForChannel(channelId)
+  }
+
+  // Fetch bot_role details for all members
+  const botRoleIds = memberRows.map((m) => m.bot_role_id)
+  const { data: botRoleRows } = await supabase
+    .from('bot_roles')
+    .select()
+    .in('id', botRoleIds)
+
+  const botRoleMap = new Map<string, BotRole>((botRoleRows ?? []).map((b) => [b.id, b]))
+
+  // If message starts with @Name, try to match a bot
+  if (messageContent) {
+    const mentionMatch = messageContent.match(/^@(\w+)/i)
+    if (mentionMatch) {
+      const mentionedName = mentionMatch[1].toLowerCase()
+      const mentionedRow = memberRows.find((m) => {
+        const bot = botRoleMap.get(m.bot_role_id)
+        return bot?.display_name?.toLowerCase() === mentionedName
+      })
+      if (mentionedRow) return botRoleMap.get(mentionedRow.bot_role_id) ?? null
+    }
+  }
+
+  // Default: primary bot
+  const primaryRow = memberRows.find((m) => m.is_primary) ?? memberRows[0]
+  return botRoleMap.get(primaryRow.bot_role_id) ?? null
+}
+
+/**
  * Generates a bot reply for the given channel and stores it as a message row.
  *
  * Flow:
- *   1. Fetch bot_role for channel
+ *   1. Resolve which bot should respond (multi-bot routing)
  *   2. Build message history (last 20 turns)
  *   3. Call Claude with cached system prompt + propose_github_action tool
  *   4a. If Claude used the tool: create a plans row (status=pending), store message with plan_id
  *   4b. Otherwise: store plain text reply
  *   5. Return stored message id
+ *
+ * @param channelId - The channel to respond in
+ * @param workspaceId - The workspace (used for context)
+ * @param parentMessageId - If set, bot reply is posted as a thread reply
+ * @param messageContent - The triggering message content (used for @mention routing)
  */
 export async function respondToMessage(
   channelId: string,
-  workspaceId: string
+  workspaceId: string,
+  parentMessageId?: string,
+  messageContent?: string
 ): Promise<string> {
   const supabase = createServiceClient()
 
-  // 1. Get bot role
-  const botRole = await getBotForChannel(channelId)
+  // 1. Resolve bot role (supports multi-bot @mention routing)
+  const botRole = await resolveBotForMessage(channelId, messageContent)
   if (!botRole) throw new Error(`No bot configured for channel ${channelId}`)
 
   // 2. Build conversation history
@@ -185,6 +245,7 @@ export async function respondToMessage(
         author_id: botRole.id,
         content: botMessage,
         plan_id: plan.id,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
       })
       .select('id')
       .single()
@@ -212,6 +273,7 @@ export async function respondToMessage(
       author_type: 'bot',
       author_id: botRole.id,
       content: replyText,
+      ...(parentMessageId ? { parent_id: parentMessageId } : {}),
     })
     .select('id')
     .single()
