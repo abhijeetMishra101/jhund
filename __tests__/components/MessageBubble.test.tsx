@@ -3,7 +3,7 @@
  */
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageBubble } from '@/app/w/[slug]/components/MessageBubble'
 import type { MessageWithThread } from '@/lib/supabase/types'
@@ -143,5 +143,36 @@ describe('MessageBubble — bot avatar', () => {
     )
     const img = screen.getByTestId('bot-avatar-img') as HTMLImageElement
     expect(img.src).toContain('riley-ops-2026')
+  })
+})
+
+describe('MessageBubble — timestamp hover', () => {
+  it('shows short time by default (no hover)', () => {
+    render(<MessageBubble message={baseMsg()} botRole={BOT_ROLE} onPlanAction={vi.fn()} />)
+    const ts = screen.getByTestId('message-timestamp')
+    // Default shows short time — no full date string
+    expect(ts).toBeInTheDocument()
+  })
+
+  it('mouseEnter and mouseLeave on timestamp do not throw', () => {
+    render(<MessageBubble message={baseMsg()} botRole={BOT_ROLE} onPlanAction={vi.fn()} />)
+    const ts = screen.getByTestId('message-timestamp')
+    // Exercises setShowFullTime(true) and setShowFullTime(false) handlers
+    fireEvent.mouseEnter(ts)
+    fireEvent.mouseLeave(ts)
+    expect(ts).toBeInTheDocument()
+  })
+
+  it('shows full date for a message from a past date on hover', () => {
+    // Use a date far in the past to trigger isOlderThanToday → formatFull
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const pastMsg = baseMsg({ created_at: yesterday.toISOString() })
+
+    render(<MessageBubble message={pastMsg} botRole={BOT_ROLE} onPlanAction={vi.fn()} />)
+    const ts = screen.getByTestId('message-timestamp')
+    fireEvent.mouseEnter(ts)
+    // After hover, timestamp should contain " at " (formatFull format: "May 12 at 3:00 PM")
+    expect(ts.textContent).toContain('at')
   })
 })

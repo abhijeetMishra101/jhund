@@ -3,7 +3,7 @@
  */
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThreadPanel } from '@/app/w/[slug]/components/ThreadPanel'
 import type { MessageWithThread } from '@/lib/supabase/types'
@@ -11,10 +11,15 @@ import type { MessageWithThread } from '@/lib/supabase/types'
 // jsdom stub
 Element.prototype.scrollIntoView = vi.fn()
 
-// Mock Supabase Realtime
+// Capture Realtime callback so tests can trigger it manually
+let realtimePayloadHandler: ((payload: { new: unknown }) => void) | null = null
+
 vi.mock('@/lib/supabase/client', () => {
   const ch = {
-    on: vi.fn().mockReturnThis(),
+    on: vi.fn().mockImplementation((_event: string, _filter: unknown, cb: (p: { new: unknown }) => void) => {
+      realtimePayloadHandler = cb
+      return ch
+    }),
     subscribe: vi.fn().mockReturnThis(),
   }
   return {
@@ -68,6 +73,7 @@ function stubFetchReplies(replies: MessageWithThread[] = []) {
 describe('ThreadPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    realtimePayloadHandler = null
   })
 
   it('renders the parent message content', async () => {
@@ -164,6 +170,117 @@ describe('ThreadPanel', () => {
     await waitFor(() => {
       expect(screen.getByText(/No replies yet/)).toBeInTheDocument()
     })
+  })
+
+  it('shows empty replies when fetch throws (catch block)', async () => {
+    global.fetch = vi.fn().mockRejectedValueOnce(new Error('network error'))
+    render(
+      <ThreadPanel
+        parentMessage={makeParent()}
+        channelId="ch-1"
+        botRoleMap={BOT_ROLE_MAP}
+        onClose={vi.fn()}
+        onPlanAction={vi.fn()}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/No replies yet/)).toBeInTheDocument()
+    })
+  })
+
+  it('removes optimistic message when POST returns non-ok', async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ replies: [] }) } as Response)
+      .mockResolvedValueOnce({ ok: false, json: async () => ({}) } as Response)
+
+    render(
+      <ThreadPanel
+        parentMessage={makeParent()}
+        channelId="ch-1"
+        botRoleMap={BOT_ROLE_MAP}
+        onClose={vi.fn()}
+        onPlanAction={vi.fn()}
+      />
+    )
+    await waitFor(() => expect(screen.getByText(/No replies yet/)).toBeInTheDocument())
+
+    await userEvent.type(screen.getByRole('textbox'), 'My reply')
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    // Optimistic message is briefly shown then removed on failure
+    await waitFor(() => {
+      expect(screen.queryByText('My reply')).not.toBeInTheDocument()
+    })
+  })
+
+  it('Realtime INSERT appends new message matching parent_id', async () => {
+    stubFetchReplies([])
+    render(
+      <ThreadPanel
+        parentMessage={makeParent()}
+        channelId="ch-1"
+        botRoleMap={BOT_ROLE_MAP}
+        onClose={vi.fn()}
+        onPlanAction={vi.fn()}
+      />
+    )
+    await waitFor(() => expect(screen.getByText(/No replies yet/)).toBeInTheDocument())
+
+    // Simulate Realtime INSERT for a reply to this thread
+    const newMsg = makeReply('rt-1', 'Realtime reply')
+    act(() => { realtimePayloadHandler?.({ new: newMsg }) })
+
+    await waitFor(() => {
+      expect(screen.getByText('Realtime reply')).toBeInTheDocument()
+    })
+  })
+
+  it('Realtime INSERT ignores messages with a different parent_id', async () => {
+    stubFetchReplies([])
+    render(
+      <ThreadPanel
+        parentMessage={makeParent()}
+        channelId="ch-1"
+        botRoleMap={BOT_ROLE_MAP}
+        onClose={vi.fn()}
+        onPlanAction={vi.fn()}
+      />
+    )
+    await waitFor(() => expect(screen.getByText(/No replies yet/)).toBeInTheDocument())
+
+    // parent_id differs — should NOT be added
+    const wrongMsg = { ...makeReply('rt-x', 'Wrong thread'), parent_id: 'other-parent' }
+    act(() => { realtimePayloadHandler?.({ new: wrongMsg }) })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Wrong thread')).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows formatted date for a reply from a past date', async () => {
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const oldReply: MessageWithThread = {
+      ...makeReply('old-1', 'Old reply'),
+      created_at: yesterday.toISOString(),
+    }
+    stubFetchReplies([oldReply])
+    render(
+      <ThreadPanel
+        parentMessage={makeParent()}
+        channelId="ch-1"
+        botRoleMap={BOT_ROLE_MAP}
+        onClose={vi.fn()}
+        onPlanAction={vi.fn()}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Old reply')).toBeInTheDocument()
+    })
+    // formatFull was called — timestamp should contain " at " for past dates
+    const timestamps = document.querySelectorAll('.text-\\[10px\\]')
+    const atTimestamps = Array.from(timestamps).filter((el) => el.textContent?.includes('at'))
+    expect(atTimestamps.length).toBeGreaterThan(0)
   })
 
   it('reply input sends with parent_id', async () => {

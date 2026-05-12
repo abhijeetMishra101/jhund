@@ -180,4 +180,19 @@ describe('ChannelSidebar', () => {
     await userEvent.click(screen.getByTestId('dm-bot-riley'))
     expect(onSelect).toHaveBeenCalledWith('dm-riley')
   })
+
+  it('changes background on mouseEnter for inactive DM bot button', () => {
+    renderSidebar({ channels: CHANNELS, activeChannelId: 'ch-1' })
+    const dmBtn = screen.getByTestId('dm-bot-sam')
+    fireEvent.mouseEnter(dmBtn)
+    expect(dmBtn.style.backgroundColor).toBe('rgb(39, 41, 45)')
+  })
+
+  it('restores background on mouseLeave for inactive DM bot button', () => {
+    renderSidebar({ channels: CHANNELS, activeChannelId: 'ch-1' })
+    const dmBtn = screen.getByTestId('dm-bot-sam')
+    fireEvent.mouseEnter(dmBtn)
+    fireEvent.mouseLeave(dmBtn)
+    expect(dmBtn.style.backgroundColor).toBe('transparent')
+  })
 })

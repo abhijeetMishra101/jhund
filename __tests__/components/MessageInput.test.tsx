@@ -76,3 +76,53 @@ describe('MessageInput', () => {
     expect(screen.getByText(/Enter to send/)).toBeInTheDocument()
   })
 })
+
+describe('MessageInput — multi-bot placeholder (buildPlaceholder)', () => {
+  const ONE_MEMBER = [{ display_name: 'Sam', role_key: 'backend' }]
+  const TWO_MEMBERS = [
+    { display_name: 'Sam', role_key: 'backend' },
+    { display_name: 'Casey', role_key: 'qa' },
+  ]
+
+  it('uses #channel placeholder for single member', () => {
+    renderInput({ channelName: 'engineering', channelMembers: ONE_MEMBER })
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Message #engineering')
+  })
+
+  it('uses multi-bot placeholder for multiple members', () => {
+    renderInput({ channelName: 'engineering', channelMembers: TWO_MEMBERS })
+    const ta = screen.getByRole('textbox')
+    expect(ta.getAttribute('placeholder')).toContain('Sam will respond')
+    expect(ta.getAttribute('placeholder')).toContain('@Casey')
+  })
+
+  it('falls back to generic placeholder when no members provided', () => {
+    renderInput({ channelName: 'engineering' })
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Message engineering…')
+  })
+})
+
+describe('MessageInput — @mention highlight (renderWithMentions)', () => {
+  const MEMBERS = [
+    { display_name: 'Sam', role_key: 'backend' },
+    { display_name: 'Casey', role_key: 'qa' },
+  ]
+
+  it('renders mention preview when value contains @ and matching member name', () => {
+    renderInput({ channelName: 'eng', channelMembers: MEMBERS, value: 'Hey @Sam can you help?' })
+    // Preview div should appear (aria-hidden) with a highlighted span
+    const preview = document.querySelector('[aria-hidden]')
+    expect(preview).toBeInTheDocument()
+    expect(preview?.textContent).toContain('@Sam')
+  })
+
+  it('does not render mention preview when value has no @', () => {
+    renderInput({ channelName: 'eng', channelMembers: MEMBERS, value: 'plain message' })
+    expect(document.querySelector('[aria-hidden]')).not.toBeInTheDocument()
+  })
+
+  it('does not render mention preview when no channelMembers', () => {
+    renderInput({ channelName: 'eng', value: '@Sam check this' })
+    expect(document.querySelector('[aria-hidden]')).not.toBeInTheDocument()
+  })
+})
