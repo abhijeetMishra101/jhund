@@ -312,12 +312,12 @@ describe('UC-3-02 — Thread replies', () => {
 
     // Mock the DB query that the threads endpoint would run:
     // SELECT * FROM messages WHERE parent_id = ? ORDER BY created_at ASC
-    let orderArgs: { ascending?: boolean } | null = null
+    let orderArgs: Record<string, unknown> | null = null
     mockServiceFrom.mockReturnValueOnce({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockImplementation((_col: string, opts: { ascending: boolean }) => {
-        orderArgs = opts
+      order: vi.fn().mockImplementation((_col: unknown, opts: unknown) => {
+        orderArgs = opts as Record<string, unknown>
         return Promise.resolve({ data: threadReplies, error: null })
       }),
     })
@@ -333,7 +333,8 @@ describe('UC-3-02 — Thread replies', () => {
     expect(data).toHaveLength(2)
     expect(data?.[0].id).toBe('reply-1')
     expect(data?.[1].id).toBe('reply-2')
-    expect(orderArgs?.ascending).toBe(true)
+    // Cast to break TypeScript narrowing from mock chain interaction
+    expect((orderArgs as Record<string, unknown> | null)?.ascending).toBe(true)
   })
 
   it('messages with parent_id are stored with correct parent reference', async () => {
@@ -345,10 +346,10 @@ describe('UC-3-02 — Thread replies', () => {
       parent_id: PARENT_MSG_ID,
     }
 
-    let capturedInsert: typeof replyPayload | null = null
+    let capturedInsert: Record<string, unknown> | null = null
     mockServiceFrom.mockReturnValueOnce({
-      insert: vi.fn().mockImplementation((payload: typeof replyPayload) => {
-        capturedInsert = payload
+      insert: vi.fn().mockImplementation((payload: unknown) => {
+        capturedInsert = payload as Record<string, unknown>
         return {
           select: vi.fn().mockReturnThis(),
           single: vi.fn().mockResolvedValue({ data: { id: REPLY_MSG_ID }, error: null }),
@@ -360,8 +361,9 @@ describe('UC-3-02 — Thread replies', () => {
     const db = createServiceClient()
     await db.from('messages').insert(replyPayload).select('id').single()
 
-    expect(capturedInsert?.parent_id).toBe(PARENT_MSG_ID)
-    expect(capturedInsert?.author_id).toBe(BOT_SAM.id)
+    // Cast to break TypeScript narrowing from mock chain interaction
+    expect((capturedInsert as Record<string, unknown> | null)?.parent_id).toBe(PARENT_MSG_ID)
+    expect((capturedInsert as Record<string, unknown> | null)?.author_id).toBe(BOT_SAM.id)
   })
 })
 
@@ -441,10 +443,10 @@ describe('UC-3-05 — Bot presence', () => {
   })
 
   it('online status set when bot responds (status field updatable)', async () => {
-    let capturedUpdate: { status?: string; status_updated_at?: string } | null = null
+    let capturedUpdate: Record<string, unknown> | null = null
     mockServiceFrom.mockReturnValueOnce({
-      update: vi.fn().mockImplementation((payload: { status: string }) => {
-        capturedUpdate = payload
+      update: vi.fn().mockImplementation((payload: unknown) => {
+        capturedUpdate = payload as Record<string, unknown>
         return { eq: vi.fn().mockResolvedValue({ error: null }) }
       }),
     })
@@ -456,7 +458,8 @@ describe('UC-3-05 — Bot presence', () => {
       .update({ status: 'busy', status_updated_at: new Date().toISOString() })
       .eq('id', BOT_SAM.id)
 
-    expect(capturedUpdate?.status).toBe('busy')
+    // Cast to break TypeScript narrowing from mock chain interaction
+    expect((capturedUpdate as Record<string, unknown> | null)?.status).toBe('busy')
   })
 
   it('DiceBear avatar URL is constructed with avatar_seed', () => {
@@ -652,12 +655,12 @@ describe('UC-5-03 — DM channels', () => {
   it('DM channel can be created via DB insert', async () => {
     let capturedInsert: Record<string, unknown> | null = null
     mockServiceFrom.mockReturnValueOnce({
-      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-        capturedInsert = payload
+      insert: vi.fn().mockImplementation((payload: unknown) => {
+        capturedInsert = payload as Record<string, unknown>
         return {
           select: vi.fn().mockReturnThis(),
           single: vi.fn().mockResolvedValue({
-            data: { id: DM_CHANNEL_ID, ...payload },
+            data: { id: DM_CHANNEL_ID, ...(payload as Record<string, unknown>) },
             error: null,
           }),
         }
@@ -679,7 +682,8 @@ describe('UC-5-03 — DM channels', () => {
       .single()
 
     expect(data?.name).toBe('dm-riley')
-    expect(capturedInsert?.channel_type).toBe('dm')
+    // Cast to break TypeScript narrowing from mock chain interaction
+    expect((capturedInsert as Record<string, unknown> | null)?.channel_type).toBe('dm')
   })
 
   it('duplicate DM channel is not created if one already exists', async () => {
@@ -719,7 +723,7 @@ describe('UC-5-03 — DM channels', () => {
     if (!existing) {
       await db
         .from('channels')
-        .insert({ workspace_id: WORKSPACE_ID, name: 'dm-riley', channel_type: 'dm' })
+        .insert({ workspace_id: WORKSPACE_ID, name: 'dm-riley', display_name: 'Riley', channel_type: 'dm' })
         .select()
         .single()
     }
