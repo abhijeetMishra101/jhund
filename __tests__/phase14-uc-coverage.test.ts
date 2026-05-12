@@ -543,84 +543,65 @@ describe('UC-10-01 — Standup thread consolidation', () => {
   })
 
   it('standup thread: opening → bot replies → summary are all in same thread', async () => {
-    const WS_ID = WORKSPACE_ID
-    const BOT_CH = 'ch-engineering-bot'
+    // Phase 14 standup calls Anthropic directly (not respondToMessage).
+    // Flow per bot: insert prompt → Claude → insert bot reply → delete prompt
+    // Then: Claude digest → insert riley summary → update last_standup_at
 
-    function workspacesChain(ids: string[]) {
-      return { select: vi.fn().mockResolvedValue({ data: ids.map((id) => ({ id })), error: null }) }
-    }
+    const botRole = { id: BOT_SAM.id, display_name: 'Sam', system_prompt: 'You are Sam.' }
 
-    function standupChannelChain() {
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: { id: STANDUP_CH_ID }, error: null }),
-      }
-    }
-
-    function rileyChain() {
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: { id: BOT_RILEY.id }, error: null }),
-      }
-    }
-
-    function openingInsertChain() {
-      return {
-        insert: vi.fn().mockReturnThis(),
-        select: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: { id: RILEY_OPENING_ID }, error: null }),
-      }
-    }
-
-    function activeChannelsChain() {
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        neq: vi.fn().mockReturnThis(),
-        not: vi.fn().mockResolvedValue({
-          data: [{ id: BOT_CH, name: 'engineering', display_name: '# engineering', bot_role_id: BOT_SAM.id }],
-          error: null,
-        }),
-      }
-    }
-
-    function simpleInsertChain(id: string) {
-      return { insert: vi.fn().mockResolvedValue({ error: null }), data: { id } }
-    }
-
-    function botMessageChain() {
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        order: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: { content: 'Working on auth PR today.' }, error: null }),
-      }
-    }
-
-    function standupUpdateChain() {
-      return { update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
-    }
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Working on auth PR today.' }] }) // bot standup
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Team summary.' }] }) // digest
 
     mockServiceFrom
-      .mockReturnValueOnce(workspacesChain([WS_ID]))   // workspaces
-      .mockReturnValueOnce(standupChannelChain())        // standup channel
-      .mockReturnValueOnce(rileyChain())                 // riley lookup
-      .mockReturnValueOnce(openingInsertChain())         // opening message insert (returns RILEY_OPENING_ID)
-      .mockReturnValueOnce(activeChannelsChain())        // active bot channels
-      .mockReturnValueOnce(simpleInsertChain('sys-msg')) // standup prompt in bot channel
-      .mockReturnValueOnce(botMessageChain())            // read back bot response
-      .mockReturnValueOnce(simpleInsertChain(RILEY_SUMMARY_ID)) // digest insert
-      .mockReturnValueOnce(standupUpdateChain())         // last_standup_at update
+      // 1. workspaces
+      .mockReturnValueOnce({ select: vi.fn().mockResolvedValue({ data: [{ id: WORKSPACE_ID }], error: null }) })
+      // 2. standup channel
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: STANDUP_CH_ID }, error: null }),
+      })
+      // 3. riley bot_role
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: BOT_RILEY.id, display_name: 'Riley', system_prompt: 'You are Riley.' }, error: null }),
+      })
+      // 4. riley opening message insert → returns RILEY_OPENING_ID
+      .mockReturnValueOnce({
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { id: RILEY_OPENING_ID }, error: null }),
+        }),
+      })
+      // 5. all bot_roles except ops
+      .mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockResolvedValue({ data: [botRole], error: null }),
+      })
+      // 6. prompt message insert (per bot) → returns id
+      .mockReturnValueOnce({
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { id: 'prompt-id' }, error: null }),
+        }),
+      })
+      // 7. bot update insert as thread reply
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
+      // 8. delete prompt message
+      .mockReturnValueOnce({ delete: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) })
+      // 9. riley summary insert
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
+      // 10. last_standup_at update
+      .mockReturnValueOnce({ update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) })
 
     const { runStandup } = await import('@/lib/crons/standup')
     const result = await runStandup()
 
     expect(result.workspaces).toBe(1)
-    expect(mockRespondToMessage).toHaveBeenCalledWith(BOT_CH, WS_ID)
-    expect(mockAnthropicCreate).toHaveBeenCalledOnce()
+    // Phase 14 standup calls Anthropic directly — once for the bot, once for the digest
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(2)
+    // respondToMessage is NOT called — standup builds its own thread
+    expect(mockRespondToMessage).not.toHaveBeenCalled()
   })
 
   it('standup messages form a complete thread chain (opening has no parent, replies do)', () => {
