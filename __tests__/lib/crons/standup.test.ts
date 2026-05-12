@@ -282,4 +282,85 @@ describe('runStandup (Phase 14 — thread consolidation)', () => {
     const summaryInsert = insertCalls[3]
     expect(summaryInsert?.parent_id).toBe(RILEY_MSG_ID)
   })
+
+  it('skips bot update insert when Claude throws, continues gracefully', async () => {
+    const bot = { id: BOT_ROLE_ID, display_name: 'Sam', system_prompt: 'You are Sam.' }
+
+    // Claude throws on the bot standup call
+    mockAnthropicCreate.mockRejectedValueOnce(new Error('Claude timeout'))
+
+    const openingInsertChain = {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: RILEY_MSG_ID }, error: null }),
+      }),
+    }
+
+    mockServiceFrom
+      .mockReturnValueOnce(workspacesChain([WS_ID]))
+      .mockReturnValueOnce(standupChannelChain(true))
+      .mockReturnValueOnce(rileyChain(true))
+      .mockReturnValueOnce(openingInsertChain)               // opening msg
+      .mockReturnValueOnce(allBotsChain([bot]))
+      .mockReturnValueOnce({                                  // prompt msg insert
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { id: 'prompt-id' }, error: null }),
+        }),
+      })
+      // No bot update insert — botResponse is null because Claude threw
+      .mockReturnValueOnce(deleteChain())                     // delete prompt msg
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) }) // riley summary
+      .mockReturnValueOnce(updateChain())                     // last_standup_at
+
+    const { runStandup } = await import('@/lib/crons/standup')
+    const result = await runStandup()
+
+    expect(result.workspaces).toBe(1)
+    // Claude was attempted once for the bot (threw), then not called for digest (empty updates → quiet morning)
+    expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('buildStandupDigest falls back to plain text when Claude returns no text block', async () => {
+    const bot = { id: BOT_ROLE_ID, display_name: 'Sam', system_prompt: 'You are Sam.' }
+
+    // Bot standup: returns text; digest call: returns non-text block → triggers fallback
+    mockAnthropicCreate
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Working on auth.' }] })
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'x', name: 'y', input: {} }] })
+
+    const summaryInsertMock = vi.fn().mockResolvedValue({ error: null })
+
+    const openingInsertChain = {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: RILEY_MSG_ID }, error: null }),
+      }),
+    }
+
+    mockServiceFrom
+      .mockReturnValueOnce(workspacesChain([WS_ID]))
+      .mockReturnValueOnce(standupChannelChain(true))
+      .mockReturnValueOnce(rileyChain(true))
+      .mockReturnValueOnce(openingInsertChain)
+      .mockReturnValueOnce(allBotsChain([bot]))
+      .mockReturnValueOnce({
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { id: 'prompt-id' }, error: null }),
+        }),
+      })
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) }) // bot update
+      .mockReturnValueOnce(deleteChain())
+      .mockReturnValueOnce({ insert: summaryInsertMock })     // riley summary
+      .mockReturnValueOnce(updateChain())
+
+    const { runStandup } = await import('@/lib/crons/standup')
+    await runStandup()
+
+    // Fallback summary should contain the bot name (plain-text format)
+    const summaryPayload = summaryInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(typeof summaryPayload?.content).toBe('string')
+    expect(summaryPayload.content as string).toContain('Sam')
+  })
 })

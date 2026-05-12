@@ -258,4 +258,68 @@ describe('seedDefaultTriggers', () => {
     })
     expect(inserted.map((t) => (t as { event_type: string }).event_type)).not.toContain('release')
   })
+
+  it('skips seeding when workspace row is not found', async () => {
+    const insertMock = vi.fn()
+    let triggerCall = 0
+
+    mockServiceFrom.mockImplementation((table: string) => {
+      if (table === 'github_triggers' && triggerCall++ === 0) {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+      }
+      if (table === 'workspaces') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
+        }
+      }
+      return { insert: insertMock }
+    })
+
+    const { seedDefaultTriggers } = await import('@/lib/github/triggers')
+    await seedDefaultTriggers(WORKSPACE_ID)
+
+    // Workspace not found → early return, no insert
+    expect(insertMock).not.toHaveBeenCalled()
+  })
+
+  it('skips seeding when channels list is empty', async () => {
+    const insertMock = vi.fn()
+    let triggerCall = 0
+
+    mockServiceFrom.mockImplementation((table: string) => {
+      if (table === 'github_triggers' && triggerCall++ === 0) {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+      }
+      if (table === 'workspaces') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { template: 'startup' }, error: null }),
+        }
+      }
+      if (table === 'channels') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+      }
+      return { insert: insertMock }
+    })
+
+    const { seedDefaultTriggers } = await import('@/lib/github/triggers')
+    await seedDefaultTriggers(WORKSPACE_ID)
+
+    // No channels found → no triggers to insert
+    expect(insertMock).not.toHaveBeenCalled()
+  })
 })

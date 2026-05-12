@@ -384,4 +384,71 @@ describe('respondToMessage', () => {
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('empty')
   })
+
+  it('passes parent_id when parentMessageId is provided (thread reply — plain text)', async () => {
+    setupBotResolutionMocks()
+
+    const insertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'thread-reply-id' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: insertMock })
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Here is my thread reply.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID, 'parent-msg-id')
+
+    expect(id).toBe('thread-reply-id')
+    // Verify parent_id was included in the insert payload
+    const insertPayload = insertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(insertPayload.parent_id).toBe('parent-msg-id')
+  })
+
+  it('passes parent_id when parentMessageId is provided (thread reply — with plan)', async () => {
+    setupBotResolutionMocks()
+
+    // Plans insert chain
+    const plansInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'plan-uuid' },
+        error: null,
+      }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
+
+    // Messages insert chain
+    const messagesInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'thread-plan-reply-id' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: messagesInsertMock })
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-1',
+          name: 'propose_github_action',
+          input: {
+            plain_english_description: 'Create an issue',
+            actions: [{ action_type: 'create_issue', payload: { title: 'Bug', body: 'details', labels: [] } }],
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID, 'parent-msg-id')
+
+    expect(id).toBe('thread-plan-reply-id')
+    // Message insert should include parent_id
+    const msgPayload = messagesInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(msgPayload.parent_id).toBe('parent-msg-id')
+  })
 })
