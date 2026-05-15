@@ -30,7 +30,7 @@ const DOT_SIZE: Record<NonNullable<BotAvatarProps['size']>, number> = {
 export function BotAvatar({ seed, displayName, size = 'md', status }: BotAvatarProps) {
   const px = SIZE_PX[size]
   const dotPx = DOT_SIZE[size]
-  const url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,c0aede,d1d4f9&radius=50`
+  const url = `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf&radius=50`
 
   return (
     <span
