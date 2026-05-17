@@ -10,7 +10,7 @@ describe('BotAvatar', () => {
   it('renders DiceBear URL with correct seed', () => {
     render(<BotAvatar seed="riley-ops-2026" displayName="Riley" />)
     const img = screen.getByTestId('bot-avatar-img') as HTMLImageElement
-    expect(img.src).toContain('api.dicebear.com/7.x/avataaars/svg')
+    expect(img.src).toContain('api.dicebear.com/7.x/notionists/svg')
     expect(img.src).toContain('riley-ops-2026')
     expect(img.src).toContain('backgroundColor=b6e3f4')
   })
