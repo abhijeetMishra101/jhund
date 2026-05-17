@@ -17,6 +17,51 @@ interface Props {
   onOpenDm?: (botRoleId: string, roleKey: string) => void
 }
 
+function SectionLabel({ label, testId }: { label: string; testId: string }) {
+  return (
+    <p
+      className="px-4 text-xs font-semibold uppercase tracking-wider mb-1"
+      style={{ color: '#868686' }}
+      data-testid={testId}
+    >
+      {label}
+    </p>
+  )
+}
+
+function ChannelButton({
+  isActive,
+  onClick,
+  testId,
+  children,
+}: {
+  isActive: boolean
+  onClick: () => void
+  testId: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testId}
+      aria-current={isActive ? 'page' : undefined}
+      className="w-full text-left px-4 py-1.5 text-sm transition-colors rounded flex items-center"
+      style={{
+        backgroundColor: isActive ? '#1164a3' : 'transparent',
+        color: isActive ? '#ffffff' : '#d1d2d3',
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) e.currentTarget.style.backgroundColor = '#27292d'
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 function MemberAvatarRow({ members }: { members: ChannelWithMembers['members'] }) {
   const { presenceMap } = usePresence()
   const visible = members.slice(0, 3)
@@ -52,13 +97,18 @@ export function ChannelSidebar({
 }: Props) {
   const { presenceMap } = usePresence()
 
-  const regularChannels = channels.filter((c) => c.channel_type !== 'dm')
+  // Split channels by type
+  const teammateChannels = channels.filter(
+    (c) => c.channel_type === 'channel'
+  )
+  const roomChannels = channels.filter(
+    (c) => c.channel_type === 'standup' || c.channel_type === 'retrospective'
+  )
   const dmChannels = channels.filter((c) => c.channel_type === 'dm')
 
-  // Collect unique bots: from regular channels (potential DM contacts) +
-  // from existing DM channels (already have a DM open). Deduplication handled below.
+  // Unique bots for the DMs section: all bots from teammate channels + existing DM members
   const allMembers = [
-    ...regularChannels.flatMap((c) => c.members),
+    ...teammateChannels.flatMap((c) => c.members),
     ...dmChannels.flatMap((c) => c.members),
   ]
   const seenBotIds = new Set<string>()
@@ -70,64 +120,58 @@ export function ChannelSidebar({
 
   return (
     <aside className="w-60 shrink-0 flex flex-col" style={{ backgroundColor: '#1a1d21' }}>
+      {/* Workspace header */}
       <div className="px-4 py-3 border-b border-white/10">
         <h1 className="text-sm font-bold text-white truncate">{workspaceName}</h1>
         <p className="text-xs mt-0.5" style={{ color: '#868686' }}>Your team</p>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-3">
-        {/* CHANNELS section */}
-        <p
-          className="px-4 text-xs font-semibold uppercase tracking-wider mb-1"
-          style={{ color: '#868686' }}
-          data-testid="channels-section-label"
-        >
-          Channels
-        </p>
+        {/* TEAMMATES section */}
+        <SectionLabel label="Teammates" testId="channels-section-label" />
         <ul data-testid="channels-list">
-          {regularChannels.map((ch) => {
-            const isActive = activeChannelId === ch.id
-            return (
-              <li key={ch.id}>
-                <button
-                  onClick={() => onSelect(ch.id)}
-                  data-testid={`channel-${ch.id}`}
-                  aria-current={isActive ? 'page' : undefined}
-                  className="w-full text-left px-4 py-1.5 text-sm transition-colors rounded mx-0 flex items-center"
-                  style={{
-                    backgroundColor: isActive ? '#1164a3' : 'transparent',
-                    color: isActive ? '#ffffff' : '#d1d2d3',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) e.currentTarget.style.backgroundColor = '#27292d'
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'
-                  }}
-                >
-                  <span className="flex-1 truncate"># {ch.display_name}</span>
-                  {ch.members.length > 0 && (
-                    <MemberAvatarRow members={ch.members} />
-                  )}
-                </button>
-              </li>
-            )
-          })}
+          {teammateChannels.map((ch) => (
+            <li key={ch.id}>
+              <ChannelButton
+                isActive={activeChannelId === ch.id}
+                onClick={() => onSelect(ch.id)}
+                testId={`channel-${ch.id}`}
+              >
+                <span className="flex-1 truncate"># {ch.display_name}</span>
+                {ch.members.length > 0 && (
+                  <MemberAvatarRow members={ch.members} />
+                )}
+              </ChannelButton>
+            </li>
+          ))}
         </ul>
+
+        {/* ROOMS section — standup + retrospective */}
+        {roomChannels.length > 0 && (
+          <>
+            <SectionLabel label="Rooms" testId="rooms-section-label" />
+            <ul data-testid="rooms-list">
+              {roomChannels.map((ch) => (
+                <li key={ch.id}>
+                  <ChannelButton
+                    isActive={activeChannelId === ch.id}
+                    onClick={() => onSelect(ch.id)}
+                    testId={`channel-${ch.id}`}
+                  >
+                    <span className="flex-1 truncate"># {ch.display_name}</span>
+                  </ChannelButton>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
         {/* DIRECT MESSAGES section */}
         {(uniqueBots.length > 0 || dmChannels.length > 0) && (
           <>
-            <p
-              className="px-4 text-xs font-semibold uppercase tracking-wider mt-4 mb-1"
-              style={{ color: '#868686' }}
-              data-testid="dms-section-label"
-            >
-              Direct Messages
-            </p>
+            <SectionLabel label="Direct Messages" testId="dms-section-label" />
             <ul data-testid="dms-list">
               {uniqueBots.map((bot) => {
-                // Find the DM channel for this bot if it already exists
                 const existingDm = dmChannels.find((c) =>
                   c.members.some((m) => m.bot_role_id === bot.bot_role_id)
                 )
@@ -136,7 +180,8 @@ export function ChannelSidebar({
 
                 return (
                   <li key={bot.bot_role_id}>
-                    <button
+                    <ChannelButton
+                      isActive={isActive}
                       onClick={() => {
                         if (existingDm) {
                           onSelect(existingDm.id)
@@ -144,19 +189,7 @@ export function ChannelSidebar({
                           onOpenDm?.(bot.bot_role_id, bot.role_key)
                         }
                       }}
-                      data-testid={`dm-${bot.bot_role_id}`}
-                      aria-current={isActive ? 'page' : undefined}
-                      className="w-full text-left px-4 py-1.5 text-sm transition-colors rounded mx-0 flex items-center gap-2"
-                      style={{
-                        backgroundColor: isActive ? '#1164a3' : 'transparent',
-                        color: isActive ? '#ffffff' : '#d1d2d3',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isActive) e.currentTarget.style.backgroundColor = '#27292d'
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'
-                      }}
+                      testId={`dm-${bot.bot_role_id}`}
                     >
                       <BotAvatar
                         seed={bot.avatar_seed}
@@ -164,14 +197,28 @@ export function ChannelSidebar({
                         size="sm"
                         status={liveStatus}
                       />
-                      <span className="truncate">{bot.display_name}</span>
-                    </button>
+                      <span className="truncate ml-2">{bot.display_name}</span>
+                    </ChannelButton>
                   </li>
                 )
               })}
             </ul>
           </>
         )}
+
+        {/* + Hire teammate CTA */}
+        <div className="px-4 mt-4">
+          <Link
+            href={`/w/${workspaceSlug}/settings`}
+            className="text-sm transition-colors"
+            style={{ color: '#868686' }}
+            data-testid="hire-teammate-link"
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#d1d2d3')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#868686')}
+          >
+            + Hire teammate
+          </Link>
+        </div>
       </nav>
 
       <ActionCounter used={actionsUsed} cap={actionCap} />

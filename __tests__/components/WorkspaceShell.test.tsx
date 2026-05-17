@@ -355,6 +355,36 @@ describe('WorkspaceShell — reset action cap', () => {
     await waitFor(() => expect(screen.getByTestId('reset-cap-button')).toBeInTheDocument())
   })
 
+  it('shows amber action-cap-banner at 80% usage', async () => {
+    const highUsageWorkspace = { ...WORKSPACE, actions_used: 40, action_cap: 50 } // 80%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={highUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(screen.getByTestId('action-cap-banner')).toBeInTheDocument())
+    expect(screen.getByTestId('action-cap-banner')).toHaveTextContent('running low')
+  })
+
+  it('shows red action-cap-banner at 100% usage', async () => {
+    const fullCapWorkspace = { ...WORKSPACE, actions_used: 50, action_cap: 50 } // 100%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={fullCapWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(screen.getByTestId('action-cap-banner')).toBeInTheDocument())
+    expect(screen.getByTestId('action-cap-banner')).toHaveTextContent('used all 50 actions')
+  })
+
+  it('does NOT show action-cap-banner below 80%', async () => {
+    const lowUsageWorkspace = { ...WORKSPACE, actions_used: 30, action_cap: 50 } // 60%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={lowUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    expect(screen.queryByTestId('action-cap-banner')).not.toBeInTheDocument()
+  })
+
   it('does NOT show Reset button when below 80%', async () => {
     const lowUsageWorkspace = { ...WORKSPACE, actions_used: 30, action_cap: 50 } // 60%
     global.fetch = vi.fn().mockResolvedValue({

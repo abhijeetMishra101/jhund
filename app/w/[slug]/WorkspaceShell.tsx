@@ -284,6 +284,32 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
           bottomRef={bottomRef}
         />
 
+        {/* Action cap warning banner — shown at ≥80% usage */}
+        {pctUsed >= 80 && (
+          <div
+            className="shrink-0 mx-4 mb-2 rounded-lg px-4 py-2.5 text-sm flex items-start justify-between gap-4"
+            style={{
+              backgroundColor: pctUsed >= 100 ? '#fef2f2' : '#fffbeb',
+              border: `1px solid ${pctUsed >= 100 ? '#fca5a5' : '#fcd34d'}`,
+            }}
+            data-testid="action-cap-banner"
+          >
+            <span style={{ color: pctUsed >= 100 ? '#991b1b' : '#92400e' }}>
+              {pctUsed >= 100
+                ? `🔒 Your team has used all ${actionCap} actions this month. They can still answer questions, but can't take GitHub actions until you reset.`
+                : `⚠ Your team is running low — ${actionsUsed}/${actionCap} actions used. They can still chat, but GitHub actions are limited.`}
+            </span>
+            <button
+              onClick={resetActionCap}
+              className="shrink-0 text-xs font-medium underline whitespace-nowrap"
+              style={{ color: pctUsed >= 100 ? '#991b1b' : '#92400e' }}
+              data-testid="action-cap-banner-reset"
+            >
+              Reset
+            </button>
+          </div>
+        )}
+
         <MessageInput
           channelName={activeChannel?.display_name ?? ''}
           value={inputValue}

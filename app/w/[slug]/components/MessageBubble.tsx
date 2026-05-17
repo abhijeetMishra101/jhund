@@ -55,25 +55,36 @@ export function MessageBubble({ message, botRole, onPlanAction, onOpenThread }: 
 
   const botName = botRole?.display_name ?? 'Bot'
   const avatarSeed = botRole?.avatar_seed ?? 'default'
-
   const replyCount = message.reply_count ?? 0
 
   return (
     <div
-      className={`flex items-end gap-2 group ${isUser ? 'justify-end' : 'justify-start'}`}
+      className="group flex gap-3 px-4 py-1 hover:bg-gray-50 rounded-lg transition-colors"
       data-testid={`message-${message.id}`}
     >
-      {!isUser && (
-        <BotAvatar seed={avatarSeed} displayName={botName} size="md" />
-      )}
+      {/* Avatar column — fixed 36px, top-aligned */}
+      <div className="shrink-0 w-9 pt-0.5">
+        {isUser ? (
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+            style={{ backgroundColor: '#1164a3' }}
+          >
+            You
+          </div>
+        ) : (
+          <BotAvatar seed={avatarSeed} displayName={botName} size="md" />
+        )}
+      </div>
 
-      <div className="flex flex-col gap-0.5 max-w-[70%]">
+      {/* Content column */}
+      <div className="flex-1 min-w-0">
+        {/* Name + timestamp row */}
         <div className="flex items-baseline gap-2">
-          <span className={`text-[11px] font-medium px-1 ${isUser ? 'text-right text-gray-400' : 'text-gray-500'}`}>
+          <span className="text-sm font-semibold text-gray-900">
             {isUser ? 'You' : botName}
           </span>
           <span
-            className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-default select-none"
+            className="text-[11px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-default select-none"
             onMouseEnter={() => setShowFullTime(true)}
             onMouseLeave={() => setShowFullTime(false)}
             data-testid="message-timestamp"
@@ -83,37 +94,28 @@ export function MessageBubble({ message, botRole, onPlanAction, onOpenThread }: 
               : formatTime(message.created_at)}
           </span>
         </div>
-        <div
-          className={`px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-            isUser
-              ? 'bg-indigo-600 text-white rounded-2xl rounded-br-sm'
-              : 'bg-gray-100 text-gray-900 rounded-2xl rounded-bl-sm'
-          }`}
-        >
+
+        {/* Message text — flat, no bubble */}
+        <p className="text-sm text-gray-900 leading-relaxed whitespace-pre-wrap mt-0.5">
           {message.content}
-        </div>
+        </p>
+
+        {/* Plan card */}
         {message.plan_id && !isUser && (
           <PlanCard planId={message.plan_id} onAction={onPlanAction} />
         )}
+
+        {/* Thread reply link — only visible on row hover */}
         {replyCount > 0 && (
           <button
             onClick={() => onOpenThread?.(message)}
-            className="mt-1 text-left text-xs text-indigo-600 hover:underline flex items-center gap-1"
+            className="mt-1 text-xs text-indigo-600 hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
             data-testid="thread-link"
           >
-            <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+            {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
           </button>
         )}
       </div>
-
-      {isUser && (
-        <div
-          className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white mb-1"
-          style={{ backgroundColor: '#1164a3' }}
-        >
-          You
-        </div>
-      )}
     </div>
   )
 }
