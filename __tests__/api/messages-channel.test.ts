@@ -47,10 +47,12 @@ describe('GET /api/messages/[channelId]', () => {
       return {
         select: vi.fn().mockImplementation((cols: string) => {
           selectedColumns = cols
-          return { eq: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: MESSAGES, error: null }) }
+          return {
+            eq: vi.fn().mockReturnThis(),
+            is: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue({ data: MESSAGES, error: null }),
+          }
         }),
-        eq: vi.fn().mockReturnThis(),
-        order: vi.fn().mockResolvedValue({ data: MESSAGES, error: null }),
       }
     })
 
@@ -76,6 +78,7 @@ describe('GET /api/messages/[channelId]', () => {
       return {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockReturnThis(),
         order: vi.fn().mockImplementation((_col: string, opts: { ascending: boolean }) => {
           orderArg = opts
           return Promise.resolve({ data: MESSAGES, error: null })
@@ -122,6 +125,7 @@ describe('GET /api/messages/[channelId]', () => {
       .mockReturnValueOnce({
         select: vi.fn().mockImplementation(() => ({
           eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
         })),
       })
