@@ -110,6 +110,9 @@ export default async function WorkspacePage({ params }: Props) {
 
     return {
       ...ch,
+      // Strip any leading "# " from display_name — some workspaces were seeded
+      // with it already included; the sidebar and header always prepend their own "#".
+      display_name: ch.display_name.replace(/^#+\s*/, ''),
       channel_type: inferChannelType(ch.name, ch.channel_type),
       members,
     }
