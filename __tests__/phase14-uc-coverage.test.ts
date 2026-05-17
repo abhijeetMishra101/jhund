@@ -767,6 +767,7 @@ describe('UC-5-03 — DM channels', () => {
     mockServiceFrom.mockReturnValueOnce({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
       order: vi.fn().mockResolvedValue({ data: dmMessages, error: null }),
     })
 

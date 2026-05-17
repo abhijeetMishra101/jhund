@@ -38,13 +38,16 @@ export default async function WorkspacePage({ params }: Props) {
       .order('position'),
     supabase
       .from('bot_roles')
-      .select('id, display_name, avatar_seed')
+      .select('id, display_name, avatar_seed, status, role_key')
       .eq('workspace_id', workspace.id),
   ])
 
+  // Build a map for quick lookup — used both for member enrichment and DM fallback
+  const botRoleMap = new Map((botRoles ?? []).map((b) => [b.id, b]))
+
   // Enrich channels with members (two-step join to avoid Supabase type issues)
   const channelIds = (channels ?? []).map((c) => c.id)
-  let membersByChannel: Record<string, ChannelWithMembers['members']> = {}
+  const membersByChannel: Record<string, ChannelWithMembers['members']> = {}
 
   if (channelIds.length > 0) {
     const { data: memberRows } = await supabase
@@ -54,14 +57,6 @@ export default async function WorkspacePage({ params }: Props) {
       .order('created_at', { ascending: true })
 
     if (memberRows && memberRows.length > 0) {
-      const botRoleIds = Array.from(new Set(memberRows.map((m) => m.bot_role_id)))
-      const { data: botRoleRows } = await supabase
-        .from('bot_roles')
-        .select('id, display_name, avatar_seed, status, role_key')
-        .in('id', botRoleIds)
-
-      const botRoleMap = new Map((botRoleRows ?? []).map((b) => [b.id, b]))
-
       for (const m of memberRows) {
         const bot = botRoleMap.get(m.bot_role_id)
         if (!bot) continue
@@ -70,19 +65,55 @@ export default async function WorkspacePage({ params }: Props) {
           bot_role_id: bot.id,
           display_name: bot.display_name,
           avatar_seed: bot.avatar_seed,
-          status: bot.status,
-          role_key: bot.role_key,
+          status: bot.status ?? 'offline',
+          role_key: bot.role_key ?? '',
           is_primary: m.is_primary,
         })
       }
     }
   }
 
-  const enrichedChannels: ChannelWithMembers[] = (channels ?? []).map((ch) => ({
-    ...ch,
-    channel_type: ch.channel_type ?? 'channel',
-    members: membersByChannel[ch.id] ?? [],
-  }))
+  /**
+   * Infer the true channel_type from the name when the DB still stores 'channel'.
+   * Standup/retrospective channels created before the enum migration will have
+   * channel_type='channel' but a name that clearly identifies them.
+   */
+  function inferChannelType(
+    name: string,
+    dbType: string | null,
+  ): ChannelWithMembers['channel_type'] {
+    if (dbType && dbType !== 'channel') return dbType as ChannelWithMembers['channel_type']
+    if (name === 'standup') return 'standup'
+    if (name === 'retrospective') return 'retrospective'
+    return 'channel'
+  }
+
+  const enrichedChannels: ChannelWithMembers[] = (channels ?? []).map((ch) => {
+    let members = membersByChannel[ch.id] ?? []
+
+    // Fallback: if channel_members is empty for this channel but the channel
+    // row has a bot_role_id (always set for DM channels; sometimes set for
+    // legacy single-bot channels), synthesise a member from bot_roles.
+    if (members.length === 0 && ch.bot_role_id) {
+      const bot = botRoleMap.get(ch.bot_role_id)
+      if (bot) {
+        members = [{
+          bot_role_id: bot.id,
+          display_name: bot.display_name,
+          avatar_seed: bot.avatar_seed,
+          status: bot.status ?? 'offline',
+          role_key: bot.role_key ?? '',
+          is_primary: true,
+        }]
+      }
+    }
+
+    return {
+      ...ch,
+      channel_type: inferChannelType(ch.name, ch.channel_type),
+      members,
+    }
+  })
 
   return (
     <WorkspaceShell

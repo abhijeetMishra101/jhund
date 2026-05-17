@@ -40,7 +40,13 @@ function normalizeChannel(ch: Channel | ChannelWithMembers): ChannelWithMembers 
 function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Props) {
   const botRoleMap = Object.fromEntries(botRoles.map((b) => [b.id, b]))
   const normalizedChannels = rawChannels.map(normalizeChannel)
-  const [activeChannelId, setActiveChannelId] = useState<string>(normalizedChannels[0]?.id ?? '')
+  const [activeChannelId, setActiveChannelId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(`activeChannel:${workspace.id}`)
+      if (stored && normalizedChannels.some((c) => c.id === stored)) return stored
+    }
+    return normalizedChannels[0]?.id ?? ''
+  })
   const [messages, setMessages] = useState<MessageWithThread[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -201,9 +207,17 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
       setAllChannels((prev) =>
         prev.some((c) => c.id === newChannel.id) ? prev : [...prev, newChannel]
       )
-      setActiveChannelId(newChannel.id)
+      handleChannelSelect(newChannel.id)
     }
   }
+
+  /** Persist the active channel across refreshes */
+  const handleChannelSelect = useCallback((id: string) => {
+    setActiveChannelId(id)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`activeChannel:${workspace.id}`, id)
+    }
+  }, [workspace.id])
 
   const pctUsed = Math.round((actionsUsed / actionCap) * 100)
 
@@ -219,7 +233,7 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
         activeChannelId={activeChannelId}
         actionsUsed={actionsUsed}
         actionCap={actionCap}
-        onSelect={setActiveChannelId}
+        onSelect={handleChannelSelect}
         onOpenDm={openDm}
       />
 
@@ -308,6 +322,7 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
           onSend={sendMessage}
           sending={sending}
           channelMembers={activeMembers}
+          allBotRoles={botRoles}
         />
       </div>
 

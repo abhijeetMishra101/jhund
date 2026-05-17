@@ -23,6 +23,9 @@ import WorkspaceShell from '@/app/w/[slug]/WorkspaceShell'
 // jsdom stub
 Element.prototype.scrollIntoView = vi.fn()
 
+// Clear localStorage between tests so active-channel persistence doesn't bleed across suites
+beforeEach(() => { localStorage.clear() })
+
 // ── Supabase Realtime mock ────────────────────────────────────────────────────
 // We hoist the `on` spy so we can read `.mock.calls` per test and extract the
 // callback that WorkspaceShell registers. Calling that callback simulates a

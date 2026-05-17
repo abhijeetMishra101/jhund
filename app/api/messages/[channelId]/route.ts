@@ -34,6 +34,7 @@ export async function GET(_request: Request, { params }: Params) {
     .from('messages')
     .select('id, author_type, author_id, content, plan_id, created_at, reply_count, parent_id')
     .eq('channel_id', params.channelId)
+    .is('parent_id', null)
     .order('created_at', { ascending: true })
 
   if (error) return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
