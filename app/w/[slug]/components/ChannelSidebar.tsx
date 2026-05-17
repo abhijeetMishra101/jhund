@@ -17,10 +17,10 @@ interface Props {
   onOpenDm?: (botRoleId: string, roleKey: string) => void
 }
 
-function SectionLabel({ label, testId }: { label: string; testId: string }) {
+function SectionLabel({ label, testId, mt = false }: { label: string; testId: string; mt?: boolean }) {
   return (
     <p
-      className="px-4 text-xs font-semibold uppercase tracking-wider mb-1"
+      className={`px-4 text-xs font-semibold uppercase tracking-wider mb-1${mt ? ' mt-4' : ''}`}
       style={{ color: '#868686' }}
       data-testid={testId}
     >
@@ -149,7 +149,7 @@ export function ChannelSidebar({
         {/* ROOMS section — standup + retrospective */}
         {roomChannels.length > 0 && (
           <>
-            <SectionLabel label="Rooms" testId="rooms-section-label" />
+            <SectionLabel label="Rooms" testId="rooms-section-label" mt />
             <ul data-testid="rooms-list">
               {roomChannels.map((ch) => (
                 <li key={ch.id}>
@@ -169,7 +169,7 @@ export function ChannelSidebar({
         {/* DIRECT MESSAGES section */}
         {(uniqueBots.length > 0 || dmChannels.length > 0) && (
           <>
-            <SectionLabel label="Direct Messages" testId="dms-section-label" />
+            <SectionLabel label="Direct Messages" testId="dms-section-label" mt />
             <ul data-testid="dms-list">
               {uniqueBots.map((bot) => {
                 const existingDm = dmChannels.find((c) =>

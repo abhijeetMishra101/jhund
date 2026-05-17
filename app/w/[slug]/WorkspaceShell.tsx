@@ -259,19 +259,10 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
                 backgroundColor: pctUsed >= 80 ? '#fef3c7' : '#f3f4f6',
                 color: pctUsed >= 80 ? '#92400e' : '#6b7280',
               }}
+              data-testid="reset-cap-button"
             >
               {actionsUsed} / {actionCap} actions used
             </span>
-            {pctUsed >= 80 && (
-              <button
-                onClick={resetActionCap}
-                className="text-xs px-2 py-1 rounded font-medium"
-                style={{ backgroundColor: '#e8a838', color: '#fff' }}
-                data-testid="reset-cap-button"
-              >
-                Reset
-              </button>
-            )}
           </div>
         </header>
 
