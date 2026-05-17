@@ -346,26 +346,58 @@ describe('WorkspaceShell — polling fallback (waitingForBot)', () => {
 describe('WorkspaceShell — reset action cap', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
-  it('shows Reset button when actions are at or above 80%', async () => {
+  it('shows amber counter pill when actions are at or above 80%', async () => {
     const highUsageWorkspace = { ...WORKSPACE, actions_used: 40, action_cap: 50 } // 80%
     global.fetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => [],
     } as Response)
     render(<WorkspaceShell workspace={highUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
     await waitFor(() => expect(screen.getByTestId('reset-cap-button')).toBeInTheDocument())
+    expect(screen.getByTestId('reset-cap-button')).toHaveTextContent('40 / 50 actions used')
   })
 
-  it('does NOT show Reset button when below 80%', async () => {
+  it('shows amber action-cap-banner at 80% usage', async () => {
+    const highUsageWorkspace = { ...WORKSPACE, actions_used: 40, action_cap: 50 } // 80%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={highUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(screen.getByTestId('action-cap-banner')).toBeInTheDocument())
+    expect(screen.getByTestId('action-cap-banner')).toHaveTextContent('running low')
+  })
+
+  it('shows red action-cap-banner at 100% usage', async () => {
+    const fullCapWorkspace = { ...WORKSPACE, actions_used: 50, action_cap: 50 } // 100%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={fullCapWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(screen.getByTestId('action-cap-banner')).toBeInTheDocument())
+    expect(screen.getByTestId('action-cap-banner')).toHaveTextContent('used all 50 actions')
+  })
+
+  it('does NOT show action-cap-banner below 80%', async () => {
     const lowUsageWorkspace = { ...WORKSPACE, actions_used: 30, action_cap: 50 } // 60%
     global.fetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => [],
     } as Response)
     render(<WorkspaceShell workspace={lowUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
     await waitFor(() => expect(global.fetch).toHaveBeenCalled())
-    expect(screen.queryByTestId('reset-cap-button')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('action-cap-banner')).not.toBeInTheDocument()
   })
 
-  it('calls reset-cap API and updates counter on confirm', async () => {
+  it('counter pill is always visible (not conditional on usage)', async () => {
+    const lowUsageWorkspace = { ...WORKSPACE, actions_used: 30, action_cap: 50 } // 60%
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={lowUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    expect(screen.getByTestId('reset-cap-button')).toBeInTheDocument()
+    expect(screen.getByTestId('reset-cap-button')).toHaveTextContent('30 / 50 actions used')
+  })
+
+  it('calls reset-cap API and updates counter when banner Reset is clicked', async () => {
     const highUsageWorkspace = { ...WORKSPACE, actions_used: 40, action_cap: 50 }
     global.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response) // initial load
@@ -373,9 +405,9 @@ describe('WorkspaceShell — reset action cap', () => {
 
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<WorkspaceShell workspace={highUsageWorkspace} channels={CHANNELS} botRoles={BOT_ROLES} />)
-    await waitFor(() => expect(screen.getByTestId('reset-cap-button')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('action-cap-banner-reset')).toBeInTheDocument())
 
-    await userEvent.click(screen.getByTestId('reset-cap-button'))
+    await userEvent.click(screen.getByTestId('action-cap-banner-reset'))
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/workspace/reset-cap', expect.objectContaining({ method: 'POST' })))
     await waitFor(() => expect(screen.getByText('0 / 50 actions used')).toBeInTheDocument())
