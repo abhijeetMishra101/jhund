@@ -236,4 +236,28 @@ describe('ChannelSidebar', () => {
     expect(link).toHaveTextContent('+ Hire teammate')
     expect(link).toHaveAttribute('href', '/w/acme/settings')
   })
+
+  it('hire-teammate link brightens on mouseEnter and dims on mouseLeave', () => {
+    renderSidebar()
+    const link = screen.getByTestId('hire-teammate-link') as HTMLElement
+    fireEvent.mouseEnter(link)
+    expect(link.style.color).toBe('rgb(209, 210, 211)')
+    fireEvent.mouseLeave(link)
+    expect(link.style.color).toBe('rgb(134, 134, 134)')
+  })
+
+  it('calls onSelect when a Room channel is clicked', async () => {
+    const { onSelect } = renderSidebar({ channels: [...CHANNELS, ...ROOM_CHANNELS] })
+    await userEvent.click(screen.getByTestId('channel-ch-standup'))
+    expect(onSelect).toHaveBeenCalledWith('ch-standup')
+  })
+
+  it('changes background on mouseEnter for inactive Room channel', () => {
+    renderSidebar({ channels: [...CHANNELS, ...ROOM_CHANNELS], activeChannelId: 'ch-1' })
+    const roomBtn = screen.getByTestId('channel-ch-standup')
+    fireEvent.mouseEnter(roomBtn)
+    expect(roomBtn.style.backgroundColor).toBe('rgb(39, 41, 45)')
+    fireEvent.mouseLeave(roomBtn)
+    expect(roomBtn.style.backgroundColor).toBe('transparent')
+  })
 })
