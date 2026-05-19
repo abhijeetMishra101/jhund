@@ -451,4 +451,125 @@ describe('respondToMessage', () => {
     const msgPayload = messagesInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
     expect(msgPayload.parent_id).toBe('parent-msg-id')
   })
+
+  // ── UC-5-02: First message ever sent ────────────────────────────────────────
+  it('UC-5-02: responds when buildMessageHistory returns exactly one message (first message ever)', async () => {
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    vi.mocked(buildMessageHistory).mockResolvedValueOnce([
+      { role: 'user', content: 'Hello team! Excited to get started.' },
+    ])
+
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('first-reply-id'))
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Welcome! I am ready to help you ship.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('first-reply-id')
+    expect(mockMessagesCreate).toHaveBeenCalledOnce()
+  })
+
+  // ── UC-5-01: Graceful degradation — no GitHub installation ──────────────────
+  it('UC-5-01: bot responds with plain text even when workspace has no GitHub installation', async () => {
+    // respondToMessage does not check github_installation_id — that is only
+    // checked at plan-execution time (plans/approve → executor). So the bot
+    // must always be able to answer questions regardless of GitHub status.
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-no-github'))
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'I can advise, but GitHub actions need the integration set up first.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const NO_GITHUB_WORKSPACE_ID = 'ws-no-github-installation'
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, NO_GITHUB_WORKSPACE_ID)
+
+    // Bot must respond successfully — it does not throw due to missing GitHub installation
+    expect(id).toBe('msg-no-github')
+    expect(mockMessagesCreate).toHaveBeenCalledOnce()
+  })
+})
+
+// ── UC-3-05: @mention routing in multi-bot channels ─────────────────────────
+
+const SAM = {
+  ...BOT_ROLE,
+  id: 'sam-id',
+  display_name: 'Sam',
+  role_key: 'backend',
+}
+const CASEY = {
+  ...BOT_ROLE,
+  id: 'casey-id',
+  display_name: 'Casey',
+  role_key: 'qa',
+}
+
+function setupMultiBotChannel() {
+  // channel_members: Sam is primary, Casey is not
+  mockServiceFrom.mockReturnValueOnce({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockResolvedValue({
+      data: [
+        { bot_role_id: 'sam-id', is_primary: true },
+        { bot_role_id: 'casey-id', is_primary: false },
+      ],
+      error: null,
+    }),
+  })
+  // bot_roles fetch
+  mockServiceFrom.mockReturnValueOnce({
+    select: vi.fn().mockReturnThis(),
+    in: vi.fn().mockResolvedValue({ data: [SAM, CASEY], error: null }),
+  })
+}
+
+describe('resolveBotForMessage — UC-3-05 @mention routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+  })
+
+  it('@Casey routes to Casey even though Sam is primary', async () => {
+    setupMultiBotChannel()
+    const { resolveBotForMessage } = await import('@/lib/bots/index')
+    const bot = await resolveBotForMessage(CHANNEL_ID, '@Casey run the full test suite please')
+    expect(bot?.id).toBe('casey-id')
+    expect(bot?.display_name).toBe('Casey')
+  })
+
+  it('@mention matching is case-insensitive — @casey routes to Casey', async () => {
+    setupMultiBotChannel()
+    const { resolveBotForMessage } = await import('@/lib/bots/index')
+    const bot = await resolveBotForMessage(CHANNEL_ID, '@casey please check coverage')
+    expect(bot?.id).toBe('casey-id')
+  })
+
+  it('@Sam explicitly routes to Sam (primary bot)', async () => {
+    setupMultiBotChannel()
+    const { resolveBotForMessage } = await import('@/lib/bots/index')
+    const bot = await resolveBotForMessage(CHANNEL_ID, '@Sam review this PR')
+    expect(bot?.id).toBe('sam-id')
+  })
+
+  it('unrecognised @mention falls back to primary bot', async () => {
+    setupMultiBotChannel()
+    const { resolveBotForMessage } = await import('@/lib/bots/index')
+    // @Morgan is not in this channel → falls back to Sam (primary)
+    const bot = await resolveBotForMessage(CHANNEL_ID, '@Morgan fix this')
+    expect(bot?.id).toBe('sam-id')
+  })
+
+  it('no @mention → primary bot is selected', async () => {
+    setupMultiBotChannel()
+    const { resolveBotForMessage } = await import('@/lib/bots/index')
+    const bot = await resolveBotForMessage(CHANNEL_ID, 'Can someone help me with auth?')
+    expect(bot?.id).toBe('sam-id')
+  })
 })

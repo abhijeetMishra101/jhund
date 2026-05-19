@@ -453,6 +453,18 @@ describe('WorkspaceShell — reset action cap', () => {
     expect(screen.queryByTestId('action-cap-banner')).not.toBeInTheDocument()
   })
 
+  // UC-8-01: exact boundary — 79% must NOT show banner (Math.round(39/50*100) = 78)
+  it('UC-8-01: does NOT show action-cap-banner at 79% usage — boundary guard', async () => {
+    // 39/50 = 78% after Math.round → strictly below the 80 threshold
+    const boundary = { ...WORKSPACE, actions_used: 39, action_cap: 50 }
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    } as Response)
+    render(<WorkspaceShell workspace={boundary} channels={CHANNELS} botRoles={BOT_ROLES} />)
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    expect(screen.queryByTestId('action-cap-banner')).not.toBeInTheDocument()
+  })
+
   it('counter pill is always visible (not conditional on usage)', async () => {
     const lowUsageWorkspace = { ...WORKSPACE, actions_used: 30, action_cap: 50 } // 60%
     global.fetch = vi.fn().mockResolvedValue({

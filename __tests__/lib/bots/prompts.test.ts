@@ -37,3 +37,35 @@ describe('bot system prompts — propose_github_action tool contract', () => {
     }
   )
 })
+
+// ── UC-7-04: Bot refuses push-to-main ────────────────────────────────────────
+describe('bot system prompts — push-to-main prevention (UC-7-04)', () => {
+  it('backend (Sam) prompt explicitly forbids pushing directly to main', () => {
+    const backend = ROLE_CATALOG['backend']
+    // The system prompt must contain an explicit constraint against direct pushes.
+    // This ensures Claude refuses when a founder asks "push this to main".
+    expect(backend.system_prompt).toMatch(/never push.*main|direct.*push/i)
+  })
+
+  it('backend (Sam) prompt requires all branches to start with "bot/"', () => {
+    const backend = ROLE_CATALOG['backend']
+    // Every code change must go through a bot/ branch → PR, never direct to main.
+    // This is the structural enforcement of the no-direct-push rule.
+    expect(backend.system_prompt).toContain('bot/')
+  })
+
+  it('backend (Sam) prompt instructs using pull requests for all code changes', () => {
+    const backend = ROLE_CATALOG['backend']
+    expect(backend.system_prompt).toMatch(/pull request/i)
+  })
+
+  it('propose_github_action tool enum in backend prompt has no push_to_main action type', () => {
+    // The available action types listed in the system prompt must not include
+    // any direct-push variant. The tool's enum is the hard structural gate.
+    const backend = ROLE_CATALOG['backend']
+    expect(backend.system_prompt).not.toMatch(/push_to_main|push_to_branch|direct_push/i)
+    // PR-based workflow action types are present
+    expect(backend.system_prompt).toContain('commit_file')
+    expect(backend.system_prompt).toContain('create_pr')
+  })
+})
