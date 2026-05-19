@@ -124,7 +124,7 @@ describe('WorkspaceShell — layout & initial render', () => {
 
   it('fetches messages for the first channel on mount', async () => {
     renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1', expect.anything()))
   })
 
   it('renders messages returned by the initial fetch', async () => {
@@ -143,10 +143,10 @@ describe('WorkspaceShell — channel switching', () => {
 
   it('fetches messages for the newly selected channel', async () => {
     renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1', expect.anything()))
 
     await userEvent.click(screen.getByTestId('channel-ch-2'))
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-2'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-2', expect.anything()))
   })
 
   it('updates the header channel name after switching', async () => {
@@ -155,6 +155,70 @@ describe('WorkspaceShell — channel switching', () => {
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('# Product')
     )
+  })
+
+  /**
+   * REGRESSION TEST — Phase 15 bug: messages disappeared on channel return.
+   *
+   * Root cause: fetchMessages was called with no AbortController and no error
+   * surfacing.  If the API returned non-200 the `if (res.ok)` branch was
+   * skipped silently, leaving the list empty after setMessages([]).
+   *
+   * This test documents the EXPECTED behaviour for a successful round-trip:
+   * switch to another channel, come back, messages must still be visible.
+   */
+  it('restores messages when switching back to a channel (regression guard)', async () => {
+    const engMsg = makeMsg({ id: 'eng-msg', content: 'Engineering message' })
+    const prodMsg = makeMsg({ id: 'prod-msg', channel_id: 'ch-2', content: 'Product message' })
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      const messages = url.includes('ch-2') ? [prodMsg] : [engMsg]
+      return Promise.resolve({ ok: true, status: 200, json: async () => messages } as Response)
+    })
+
+    renderShell()
+    // Initial load for #engineering
+    await waitFor(() => expect(screen.getByText('Engineering message')).toBeInTheDocument())
+
+    // Switch to #product
+    await userEvent.click(screen.getByTestId('channel-ch-2'))
+    await waitFor(() => expect(screen.getByText('Product message')).toBeInTheDocument())
+    expect(screen.queryByText('Engineering message')).not.toBeInTheDocument()
+
+    // Switch back to #engineering — messages MUST reappear
+    await userEvent.click(screen.getByTestId('channel-ch-1'))
+    await waitFor(() => expect(screen.getByText('Engineering message')).toBeInTheDocument())
+    expect(screen.queryByText('Product message')).not.toBeInTheDocument()
+  })
+
+  /**
+   * Documents the silent-failure contract: when fetchMessages receives a
+   * non-ok response the component must not crash, must log, and must leave
+   * the message list empty (not undefined/broken) — rather than showing
+   * stale data from a different channel.
+   *
+   * This is the exact failure mode that caused the Phase 15 regression:
+   * the API was returning 500 (missing DB columns) but no error was shown.
+   */
+  it('leaves messages empty without crashing when fetchMessages returns non-ok', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 500, json: async () => ({ error: 'DB error' }),
+    } as Response)
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderShell()
+
+    // Wait for the fetch to be called and finish
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    await waitFor(() => expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[fetchMessages]'),
+      expect.anything(),
+      expect.anything(),
+    ))
+
+    // No crash — component still renders header
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('# Engineering')
+    consoleSpy.mockRestore()
   })
 })
 
@@ -168,7 +232,7 @@ describe('WorkspaceShell — sendMessage', () => {
       .mockReturnValueOnce(new Promise<Response>((res) => { resolvePost = res }))          // POST
 
     renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1', expect.anything()))
 
     await userEvent.type(screen.getByRole('textbox'), 'ship it')
     await userEvent.click(screen.getByRole('button', { name: 'Send' }))
@@ -184,7 +248,7 @@ describe('WorkspaceShell — sendMessage', () => {
       .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'real-id' }) } as Response)
 
     renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1', expect.anything()))
 
     await userEvent.type(screen.getByRole('textbox'), 'hello')
     await userEvent.click(screen.getByRole('button', { name: 'Send' }))
@@ -197,7 +261,7 @@ describe('WorkspaceShell — sendMessage', () => {
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) } as Response)
 
     renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1', expect.anything()))
 
     await userEvent.type(screen.getByRole('textbox'), 'will fail')
     await userEvent.click(screen.getByRole('button', { name: 'Send' }))
@@ -210,7 +274,7 @@ describe('WorkspaceShell — sendMessage', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response)
 
     renderShell()
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1'))
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/messages/ch-1', expect.anything()))
 
     // Send button should be disabled with empty input — no POST call
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()

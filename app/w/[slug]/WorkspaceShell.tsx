@@ -63,11 +63,21 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
   const actionCap = workspace.action_cap
   const activeChannel = allChannels.find((c) => c.id === activeChannelId)
 
-  const fetchMessages = useCallback(async (channelId: string) => {
+  const fetchMessages = useCallback(async (channelId: string, signal?: AbortSignal) => {
     setLoadingMessages(true)
     try {
-      const res = await fetch(`/api/messages/${channelId}`)
-      if (res.ok) setMessages(await res.json())
+      const res = await fetch(`/api/messages/${channelId}`, { signal })
+      if (res.ok) {
+        setMessages(await res.json())
+      } else {
+        // Surface the failure so it's visible in Vercel function logs
+        console.error('[fetchMessages] API error %d for channel %s', res.status, channelId)
+      }
+    } catch (err) {
+      // AbortError is expected on channel switch — swallow it silently
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error('[fetchMessages] Network error for channel %s:', channelId, err)
+      }
     } finally {
       setLoadingMessages(false)
     }
@@ -75,9 +85,13 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
 
   useEffect(() => {
     if (!activeChannelId) return
+    const controller = new AbortController()
     setMessages([])
     setWaitingForBot(false)
-    fetchMessages(activeChannelId)
+    fetchMessages(activeChannelId, controller.signal)
+    // Cancel any in-flight fetch when the channel changes so stale data
+    // from a previous channel never overwrites the current channel's state.
+    return () => controller.abort()
   }, [activeChannelId, fetchMessages])
 
   // Supabase Realtime — new messages pushed to active channel
