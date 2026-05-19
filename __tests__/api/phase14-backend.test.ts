@@ -109,7 +109,8 @@ describe('POST /api/messages — parent_id (thread reply)', () => {
     expect(res.status).toBe(201)
     const json = await res.json()
     expect(json.id).toBe('new-reply-id')
-    expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID, PARENT_MSG_ID)
+    // content is now passed as 4th arg for @mention routing
+    expect(mockRespondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID, PARENT_MSG_ID, 'reply text')
   })
 
   it('returns 404 when parent_id does not belong to the channel', async () => {

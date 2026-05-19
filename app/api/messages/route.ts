@@ -125,9 +125,10 @@ export async function POST(request: Request) {
   }
 
   // Keep the serverless function alive until the bot responds (Vercel kills
-  // execution as soon as the response is sent without waitUntil)
+  // execution as soon as the response is sent without waitUntil).
+  // Pass content so @mention routing (resolveBotForMessage) can pick the right bot.
   waitUntil(
-    respondToMessage(channelId, userRow.workspace_id, parent_id).catch((err: unknown) => {
+    respondToMessage(channelId, userRow.workspace_id, parent_id, content.trim()).catch((err: unknown) => {
       console.error('[bot] respondToMessage failed:', err)
     })
   )
