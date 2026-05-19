@@ -66,7 +66,8 @@ describe('POST /api/messages', () => {
     const { respondToMessage } = await import('@/lib/bots')
     await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
     expect(waitUntil).toHaveBeenCalledOnce()
-    expect(respondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID, undefined)
+    // content is now passed as the 4th arg so @mention routing works correctly
+    expect(respondToMessage).toHaveBeenCalledWith(CHANNEL_ID, WORKSPACE_ID, undefined, 'hello')
   })
 
   it('returns 401 when unauthenticated', async () => {
