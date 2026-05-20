@@ -57,6 +57,35 @@ export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
   },
 }
 
+/** Creates a new feature in the Pipeline database. */
+export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
+  name: 'create_feature',
+  description:
+    'Create a new feature in the product pipeline. ' +
+    'Use this when the founder asks to log, track, add, or capture a feature idea. ' +
+    'Do NOT use propose_github_action for this — the Pipeline is the source of truth for features.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      title: {
+        type: 'string',
+        description: 'Short, clear feature name (e.g. "Dark mode support")',
+      },
+      description: {
+        type: 'string',
+        description: 'One or two sentences on what this feature does and why it matters',
+      },
+      complexity: {
+        type: 'string',
+        enum: ['hotfix', 'small', 'medium', 'large'],
+        description:
+          'hotfix=bug fix no new surface, small=1 surface clear spec, medium=multi-surface, large=multi-team new architecture',
+      },
+    },
+    required: ['title', 'description', 'complexity'],
+  },
+}
+
 /** Signals that a feature is ready to move to the next pipeline stage. */
 export const ADVANCE_FEATURE_STAGE_TOOL: Anthropic.Tool = {
   name: 'advance_feature_stage',
