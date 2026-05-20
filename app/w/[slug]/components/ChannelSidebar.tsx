@@ -15,6 +15,7 @@ interface Props {
   actionCap: number
   onSelect: (id: string) => void
   onOpenDm?: (botRoleId: string, roleKey: string) => void
+  onOpenPipeline?: () => void
 }
 
 function SectionLabel({ label, testId, mt = false }: { label: string; testId: string; mt?: boolean }) {
@@ -94,6 +95,7 @@ export function ChannelSidebar({
   actionCap,
   onSelect,
   onOpenDm,
+  onOpenPipeline,
 }: Props) {
   const { presenceMap } = usePresence()
 
@@ -206,11 +208,11 @@ export function ChannelSidebar({
           </>
         )}
 
-        {/* PIPELINE link */}
+        {/* PIPELINE button — renders inline inside the workspace shell */}
         <div className="mt-4">
           <SectionLabel label="Work" testId="work-section-label" />
-          <Link
-            href={`/w/${workspaceSlug}/pipeline`}
+          <button
+            onClick={() => onOpenPipeline?.()}
             className="w-full text-left px-4 py-1.5 text-sm transition-colors rounded flex items-center"
             style={{ color: '#d1d2d3' }}
             data-testid="pipeline-link"
@@ -223,7 +225,7 @@ export function ChannelSidebar({
               <rect x="1" y="3" width="6" height="8" rx="1" /><rect x="9" y="3" width="6" height="8" rx="1" /><rect x="17" y="3" width="6" height="8" rx="1" />
             </svg>
             Pipeline
-          </Link>
+          </button>
         </div>
 
         {/* + Hire teammate CTA */}
