@@ -9,6 +9,7 @@ import { MessageThread } from './components/MessageThread'
 import { MessageInput } from './components/MessageInput'
 import { ThreadPanel } from './components/ThreadPanel'
 import { BotAvatar } from './components/BotAvatar'
+import { PipelinePanel } from './components/PipelinePanel'
 import { PresenceProvider, usePresence } from './components/PresenceContext'
 import Link from 'next/link'
 
@@ -55,6 +56,7 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
   const [waitingForBot, setWaitingForBot] = useState(false)
   const [threadMessage, setThreadMessage] = useState<MessageWithThread | null>(null)
   const [allChannels, setAllChannels] = useState<ChannelWithMembers[]>(normalizedChannels)
+  const [showPipeline, setShowPipeline] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -228,6 +230,7 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
   /** Persist the active channel across refreshes */
   const handleChannelSelect = useCallback((id: string) => {
     setActiveChannelId(id)
+    setShowPipeline(false)
     if (typeof window !== 'undefined') {
       localStorage.setItem(`activeChannel:${workspace.id}`, id)
     }
@@ -249,9 +252,14 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
         actionCap={actionCap}
         onSelect={handleChannelSelect}
         onOpenDm={openDm}
+        onOpenPipeline={() => setShowPipeline(true)}
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      {showPipeline ? (
+        <PipelinePanel />
+      ) : null}
+
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={showPipeline ? { display: 'none' } : undefined}>
         <header className="h-12 shrink-0 border-b border-gray-200 bg-white flex items-center px-4 gap-3">
           <h2 className="text-sm font-semibold text-gray-900">
             # {activeChannel?.display_name ?? ''}
@@ -340,8 +348,8 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
         />
       </div>
 
-      {/* Thread panel — slides in from right */}
-      {threadMessage && activeChannelId && (
+      {/* Thread panel — slides in from right (hidden when pipeline is open) */}
+      {!showPipeline && threadMessage && activeChannelId && (
         <ThreadPanel
           parentMessage={threadMessage}
           channelId={activeChannelId}
