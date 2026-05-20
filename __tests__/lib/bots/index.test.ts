@@ -698,4 +698,188 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
   })
+
+  it('dispatch fires sequential callback when advance succeeds with non-empty targets', async () => {
+    setupBotResolutionMocks()
+    mockAdvanceStage.mockResolvedValue(undefined)
+    mockFeatureTitleFetch('Dark Mode')
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('sys-dispatch-seq'))
+
+    // Return a sequential target so dispatch enters the non-empty branch
+    mockGetDispatchTargets.mockResolvedValueOnce([{ channelId: 'target-ch', parallel: false }])
+
+    mockMessagesCreate.mockResolvedValue(advanceToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(id).toBe('sys-dispatch-seq')
+
+    // Flush microtasks so the fire-and-forget .then() completes
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockGetDispatchTargets).toHaveBeenCalledWith(WORKSPACE_ID, 2)
+    // postHandoffMessage called for the target channel
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch', 'Dark Mode', 2)
+  })
+
+  it('dispatch fires parallel callback for parallel targets', async () => {
+    setupBotResolutionMocks()
+    mockAdvanceStage.mockResolvedValue(undefined)
+    mockFeatureTitleFetch('Dark Mode')
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('sys-dispatch-par'))
+
+    // Return two parallel targets
+    mockGetDispatchTargets.mockResolvedValueOnce([
+      { channelId: 'target-ch-a', parallel: true },
+      { channelId: 'target-ch-b', parallel: true },
+    ])
+
+    mockMessagesCreate.mockResolvedValue(advanceToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(id).toBe('sys-dispatch-par')
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-a', 'Dark Mode', 2)
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-b', 'Dark Mode', 2)
+  })
+
+  it('dispatch .catch() handles getDispatchTargets rejection gracefully', async () => {
+    setupBotResolutionMocks()
+    mockAdvanceStage.mockResolvedValue(undefined)
+    mockFeatureTitleFetch()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('sys-dispatch-catch'))
+
+    mockGetDispatchTargets.mockRejectedValueOnce(new Error('DB down'))
+
+    mockMessagesCreate.mockResolvedValue(advanceToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    // Should not throw — .catch() handles the rejection
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(id).toBe('sys-dispatch-catch')
+  })
+})
+
+// ── create_feature tool handler ───────────────────────────────────────────────
+describe('respondToMessage — create_feature tool_use', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetDispatchTargets.mockResolvedValue([])
+    mockPostHandoffMessage.mockResolvedValue('handoff-msg-id')
+  })
+
+  function createFeatureToolResponse(overrides: Record<string, unknown> = {}) {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-create',
+          name: 'create_feature',
+          input: {
+            title: 'Dark Mode',
+            description: 'Allow users to switch to dark colour scheme.',
+            complexity: 'small',
+            ...overrides,
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  function featureInsertChain(featureId: string) {
+    return {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: featureId }, error: null }),
+      }),
+    }
+  }
+
+  it('inserts feature row and returns system message id on success', async () => {
+    setupBotResolutionMocks()
+
+    const featureMock = featureInsertChain('feat-new-id')
+    mockServiceFrom.mockReturnValueOnce(featureMock)
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('sys-create-ok'))
+
+    mockMessagesCreate.mockResolvedValue(createFeatureToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-create-ok')
+    // Feature was inserted with correct workspace and stage
+    expect(featureMock.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspace_id: WORKSPACE_ID,
+        title: 'Dark Mode',
+        stage: 1,
+        status: 'active',
+      })
+    )
+  })
+
+  it('system message content includes feature title and ID on success', async () => {
+    setupBotResolutionMocks()
+
+    mockServiceFrom.mockReturnValueOnce(featureInsertChain('feat-abc'))
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-title-check' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(createFeatureToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Dark Mode')
+    expect(content).toContain('feat-abc')
+    expect(content).toContain('Stage 1')
+  })
+
+  it('stores failure message when feature insert returns an error', async () => {
+    setupBotResolutionMocks()
+
+    // Feature insert fails
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB constraint' } }),
+      }),
+    })
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-fail' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(createFeatureToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-fail')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Failed to create feature')
+    expect(content).toContain('DB constraint')
+  })
+
+  it('throws when system message insert fails after create_feature', async () => {
+    setupBotResolutionMocks()
+
+    mockServiceFrom.mockReturnValueOnce(featureInsertChain('feat-xyz'))
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('insert failed'))
+
+    mockMessagesCreate.mockResolvedValue(createFeatureToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
+  })
 })
