@@ -206,6 +206,26 @@ export function ChannelSidebar({
           </>
         )}
 
+        {/* PIPELINE link */}
+        <div className="mt-4">
+          <SectionLabel label="Work" testId="work-section-label" />
+          <Link
+            href={`/w/${workspaceSlug}/pipeline`}
+            className="w-full text-left px-4 py-1.5 text-sm transition-colors rounded flex items-center"
+            style={{ color: '#d1d2d3' }}
+            data-testid="pipeline-link"
+            /* c8 ignore next 2 */
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#27292d')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-2 shrink-0">
+              <path d="M9 17H5a2 2 0 0 0-2 2v2" /><path d="M13 17h4a2 2 0 0 1 2 2v2" />
+              <rect x="1" y="3" width="6" height="8" rx="1" /><rect x="9" y="3" width="6" height="8" rx="1" /><rect x="17" y="3" width="6" height="8" rx="1" />
+            </svg>
+            Pipeline
+          </Link>
+        </div>
+
         {/* + Hire teammate CTA */}
         <div className="px-4 mt-4">
           <Link

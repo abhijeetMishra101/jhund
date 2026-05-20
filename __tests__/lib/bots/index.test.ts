@@ -4,12 +4,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockMessagesCreate = vi.hoisted(() => vi.fn())
 const mockServiceFrom = vi.hoisted(() => vi.fn())
 const mockRpc = vi.hoisted(() => vi.fn())
+const mockAdvanceStage = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class MockAnthropic {
     messages = { create: mockMessagesCreate }
   },
+}))
+
+vi.mock('@/lib/feature-stages', () => ({
+  advanceStage: mockAdvanceStage,
+  checkGate: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -571,5 +577,94 @@ describe('resolveBotForMessage — UC-3-05 @mention routing', () => {
     const { resolveBotForMessage } = await import('@/lib/bots/index')
     const bot = await resolveBotForMessage(CHANNEL_ID, 'Can someone help me with auth?')
     expect(bot?.id).toBe('sam-id')
+  })
+})
+
+// ── advance_feature_stage tool handler ───────────────────────────────────────
+describe('respondToMessage — advance_feature_stage tool_use', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function advanceToolResponse(overrides: Record<string, unknown> = {}) {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-advance',
+          name: 'advance_feature_stage',
+          input: {
+            feature_id: 'feat-123',
+            to_stage: 2,
+            gate_type: 'bot_signoff',
+            notes: 'Use cases are ready',
+            ...overrides,
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  it('calls advanceStage and inserts success system message', async () => {
+    setupBotResolutionMocks()
+    mockAdvanceStage.mockResolvedValue(undefined)
+
+    // system message insert
+    const insertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-msg-1' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: insertMock })
+
+    mockMessagesCreate.mockResolvedValue(advanceToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID, undefined, 'advance please')
+
+    expect(id).toBe('sys-msg-1')
+    expect(mockAdvanceStage).toHaveBeenCalledWith('feat-123', 2, 'bot_signoff', BOT_ROLE.role_key, 'Use cases are ready')
+
+    const insertedPayload = insertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(insertedPayload.author_type).toBe('system')
+    expect(insertedPayload.content as string).toMatch(/✓ Feature advanced to stage 2/)
+  })
+
+  it('inserts gate-blocked system message when advanceStage throws', async () => {
+    setupBotResolutionMocks()
+    mockAdvanceStage.mockRejectedValue(new Error('No use cases defined yet'))
+
+    const insertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-msg-2' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: insertMock })
+
+    mockMessagesCreate.mockResolvedValue(advanceToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-msg-2')
+    const insertedPayload = insertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(insertedPayload.content as string).toBe('Gate blocked: No use cases defined yet')
+  })
+
+  it('throws when system message insert fails after advance_feature_stage', async () => {
+    setupBotResolutionMocks()
+    mockAdvanceStage.mockResolvedValue(undefined)
+
+    // insert fails
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: { message: 'insert error' } }),
+      }),
+    })
+
+    mockMessagesCreate.mockResolvedValue(advanceToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
   })
 })

@@ -306,6 +306,114 @@ export type Database = {
         }
         Relationships: []
       }
+      features: {
+        Row: {
+          id: string
+          workspace_id: string
+          title: string
+          description: string
+          stage: number
+          complexity: 'hotfix' | 'small' | 'medium' | 'large'
+          status: 'active' | 'blocked' | 'shipped' | 'cancelled'
+          blocking_reason: string | null
+          pr_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          title: string
+          description: string
+          stage?: number
+          complexity?: 'hotfix' | 'small' | 'medium' | 'large'
+          status?: 'active' | 'blocked' | 'shipped' | 'cancelled'
+          blocking_reason?: string | null
+          pr_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          title?: string
+          description?: string
+          stage?: number
+          complexity?: 'hotfix' | 'small' | 'medium' | 'large'
+          status?: 'active' | 'blocked' | 'shipped' | 'cancelled'
+          blocking_reason?: string | null
+          pr_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      feature_use_cases: {
+        Row: {
+          id: string
+          feature_id: string
+          uc_id: string
+          description: string
+          verified_at: string | null
+          waived_at: string | null
+          waive_reason: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          feature_id: string
+          uc_id: string
+          description: string
+          verified_at?: string | null
+          waived_at?: string | null
+          waive_reason?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          feature_id?: string
+          uc_id?: string
+          description?: string
+          verified_at?: string | null
+          waived_at?: string | null
+          waive_reason?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      gate_events: {
+        Row: {
+          id: string
+          feature_id: string
+          from_stage: number
+          to_stage: number
+          gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+          actor_role: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          feature_id: string
+          from_stage: number
+          to_stage: number
+          gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+          actor_role?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          feature_id?: string
+          from_stage?: number
+          to_stage?: number
+          gate_type?: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+          actor_role?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -333,6 +441,43 @@ export type BotRole = Database['public']['Tables']['bot_roles']['Row']
 export type Plan = Database['public']['Tables']['plans']['Row']
 export type GithubInstallation = Database['public']['Tables']['github_installations']['Row']
 export type GithubTrigger = Database['public']['Tables']['github_triggers']['Row']
+
+// Phase 16 — Feature Stage Model types
+export interface Feature {
+  id: string
+  workspace_id: string
+  title: string
+  description: string
+  stage: number
+  complexity: 'hotfix' | 'small' | 'medium' | 'large'
+  status: 'active' | 'blocked' | 'shipped' | 'cancelled'
+  blocking_reason: string | null
+  pr_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FeatureUseCase {
+  id: string
+  feature_id: string
+  uc_id: string
+  description: string
+  verified_at: string | null
+  waived_at: string | null
+  waive_reason: string | null
+  created_at: string
+}
+
+export interface GateEvent {
+  id: string
+  feature_id: string
+  from_stage: number
+  to_stage: number
+  gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+  actor_role: string | null
+  notes: string | null
+  created_at: string
+}
 
 // Phase 14 — extended API shapes (from new backend endpoints)
 export type PresenceStatus = 'online' | 'busy' | 'offline'

@@ -184,4 +184,21 @@ describe('executeChain', () => {
     await expect(executeChain([])).resolves.toBeUndefined()
     expect(mockRespondToMessage).not.toHaveBeenCalled()
   })
+
+  it('parallel step — swallows error and still completes (error in .catch)', async () => {
+    // First step throws, second succeeds — chain should resolve without throwing
+    mockRespondToMessage
+      .mockRejectedValueOnce(new Error('Claude timeout'))
+      .mockResolvedValueOnce(undefined)
+
+    const { executeChain } = await import('@/lib/workflow-chain')
+    const steps = [
+      step({ channelId: 'ch-1', chainType: 'parallel', chainGroup: 'g', chainOrder: 0 }),
+      step({ channelId: 'ch-2', chainType: 'parallel', chainGroup: 'g', chainOrder: 1 }),
+    ]
+
+    // Must NOT throw — parallel errors are swallowed via .catch()
+    await expect(executeChain(steps)).resolves.toBeUndefined()
+    expect(mockRespondToMessage).toHaveBeenCalledTimes(2)
+  })
 })

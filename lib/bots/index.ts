@@ -1,66 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
+import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL } from './tools'
+import { advanceStage } from '@/lib/feature-stages'
 import type { BotRole } from '@/lib/supabase/types'
+import type { GateType } from '@/lib/feature-stages'
+
+export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-// Tool definition for proposing GitHub actions — injected into every Claude call
-const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
-  name: 'propose_github_action',
-  description:
-    'Propose one or more GitHub actions for the founder to approve in a single click. ' +
-    'Pass all steps as an ordered array — they execute in sequence after approval. ' +
-    'To write a file and open a PR, include commit_file as the first action and create_pr as the second. ' +
-    'Never take GitHub actions directly — always use this tool.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      plain_english_description: {
-        type: 'string',
-        description: 'Plain English summary of the full set of actions, shown to the founder for approval',
-      },
-      actions: {
-        type: 'array',
-        description: 'Ordered list of GitHub actions to execute in sequence after approval.',
-        items: {
-          type: 'object',
-          properties: {
-            action_type: {
-              type: 'string',
-              enum: ['commit_file', 'create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
-            },
-            payload: {
-              type: 'object',
-              description:
-                'Fields per action_type:\n' +
-                '- commit_file: { file_path, content, commit_message, branch } — branch must be like "bot/describe-change"\n' +
-                '- create_pr: { title, body, head_branch, base_branch } — head_branch must match the branch from commit_file\n' +
-                '- create_issue: { title, body, labels[] }\n' +
-                '- comment_pr: { pr_number, body }\n' +
-                '- comment_issue: { issue_number, body }',
-              properties: {
-                file_path: { type: 'string' },
-                content: { type: 'string' },
-                commit_message: { type: 'string' },
-                branch: { type: 'string' },
-                head_branch: { type: 'string' },
-                base_branch: { type: 'string' },
-                title: { type: 'string' },
-                body: { type: 'string' },
-                labels: { type: 'array', items: { type: 'string' } },
-                pr_number: { type: 'integer' },
-                issue_number: { type: 'integer' },
-              },
-            },
-          },
-          required: ['action_type', 'payload'],
-        },
-      },
-    },
-    required: ['plain_english_description', 'actions'],
-  },
-}
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -173,11 +121,11 @@ export async function respondToMessage(
     throw new Error('No messages to respond to')
   }
 
-  // 3. Call Claude with cached system prompt + plan-gate tool
+  // 3. Call Claude with cached system prompt + tools
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    tools: [PROPOSE_GITHUB_ACTION_TOOL],
+    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL],
     system: [
       {
         type: 'text',
@@ -193,6 +141,44 @@ export async function respondToMessage(
     | Anthropic.ToolUseBlock
     | undefined
 
+  // 4a-i. Handle advance_feature_stage tool
+  if (toolUseBlock?.name === 'advance_feature_stage') {
+    const input = toolUseBlock.input as {
+      feature_id: string
+      to_stage: number
+      gate_type: GateType
+      notes: string
+    }
+
+    let systemContent: string
+    try {
+      await advanceStage(input.feature_id, input.to_stage, input.gate_type, botRole.role_key, input.notes)
+      systemContent = `✓ Feature advanced to stage ${input.to_stage}: ${input.notes}`
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      systemContent = `Gate blocked: ${message}`
+    }
+
+    const { data: stored, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: botRole.id,
+        content: systemContent,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !stored) {
+      throw new Error(`Failed to store system message: ${insertError?.message ?? 'no data'}`)
+    }
+
+    return stored.id
+  }
+
+  // 4a-ii. Handle propose_github_action tool
   if (toolUseBlock) {
     const input = toolUseBlock.input as {
       plain_english_description: string
