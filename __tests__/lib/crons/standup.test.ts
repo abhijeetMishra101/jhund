@@ -321,6 +321,59 @@ describe('runStandup (Phase 14 — thread consolidation)', () => {
     expect(mockAnthropicCreate).toHaveBeenCalledTimes(1)
   })
 
+  // UC-10-01: sequential bot processing order
+  it('UC-10-01: bots are processed sequentially — Claude calls happen in bot-list order', async () => {
+    const BOT_A = { id: 'bot-a', display_name: 'Sam', system_prompt: 'Sam system prompt.' }
+    const BOT_B = { id: 'bot-b', display_name: 'Casey', system_prompt: 'Casey system prompt.' }
+
+    const claudeCallOrder: string[] = []
+    mockAnthropicCreate.mockImplementation(async (params: { system: Array<{ text: string }> }) => {
+      const sysText = params.system[0]?.text ?? ''
+      if (sysText.includes('Sam')) claudeCallOrder.push('Sam')
+      else if (sysText.includes('Casey')) claudeCallOrder.push('Casey')
+      else claudeCallOrder.push('digest')
+      return { content: [{ type: 'text', text: 'Working on it.' }] }
+    })
+
+    // 2-bot standup: 10 mockServiceFrom calls
+    const openingInsert = {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: RILEY_MSG_ID }, error: null }),
+      }),
+    }
+    const promptInsert = () => ({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'prompt-id' }, error: null }),
+      }),
+    })
+    const fireInsert = () => ({ insert: vi.fn().mockResolvedValue({ error: null }) })
+
+    mockServiceFrom
+      .mockReturnValueOnce(workspacesChain([WS_ID]))
+      .mockReturnValueOnce(standupChannelChain(true))
+      .mockReturnValueOnce(rileyChain(true))
+      .mockReturnValueOnce(openingInsert)                  // Riley opening
+      .mockReturnValueOnce(allBotsChain([BOT_A, BOT_B]))  // all bots
+      .mockReturnValueOnce(promptInsert())                 // prompt for Sam
+      .mockReturnValueOnce(fireInsert())                   // Sam update
+      .mockReturnValueOnce(deleteChain())                  // delete Sam prompt
+      .mockReturnValueOnce(promptInsert())                 // prompt for Casey
+      .mockReturnValueOnce(fireInsert())                   // Casey update
+      .mockReturnValueOnce(deleteChain())                  // delete Casey prompt
+      .mockReturnValueOnce(fireInsert())                   // Riley summary
+      .mockReturnValueOnce(updateChain())                  // last_standup_at
+
+    const { runStandup } = await import('@/lib/crons/standup')
+    await runStandup()
+
+    // Claude called twice for bots (in order) + once for digest
+    expect(claudeCallOrder[0]).toBe('Sam')
+    expect(claudeCallOrder[1]).toBe('Casey')
+    expect(claudeCallOrder[2]).toBe('digest')
+  })
+
   it('buildStandupDigest falls back to plain text when Claude returns no text block', async () => {
     const bot = { id: BOT_ROLE_ID, display_name: 'Sam', system_prompt: 'You are Sam.' }
 

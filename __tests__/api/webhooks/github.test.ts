@@ -175,4 +175,34 @@ describe('POST /api/webhooks/github', () => {
     const res = await POST(makeWebhookReq(payload, 'check_run', false))
     expect(res.status).toBe(401)
   })
+
+  // UC-4-01: system message inserted for a matched event contains a meaningful summary
+  it('UC-4-01: system message inserted in channel contains PR event summary', async () => {
+    const step = chainStep()
+    mockRouteGithubEvent.mockResolvedValue([step])
+    mockBuildChains.mockReturnValue([[step]])
+
+    let insertedPayload: Record<string, unknown> | null = null
+    mockServiceFrom.mockReturnValue({
+      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        insertedPayload = payload
+        return Promise.resolve({ error: null })
+      }),
+    })
+
+    let capturedPromise: Promise<unknown> | null = null
+    const { waitUntil } = await import('@vercel/functions')
+    vi.mocked(waitUntil).mockImplementationOnce((p: Promise<unknown>) => { capturedPromise = p })
+
+    const { POST } = await import('@/app/api/webhooks/github/route')
+    await POST(makeWebhookReq(PR_PAYLOAD, 'pull_request'))
+    await capturedPromise
+
+    // The inserted system message must reference the PR
+    // (summariseEvent is the real implementation — no mock — so it produces a real summary)
+    expect(insertedPayload).not.toBeNull()
+    expect(insertedPayload!.author_type).toBe('system')
+    expect(typeof insertedPayload!.content).toBe('string')
+    expect(insertedPayload!.content as string).toMatch(/Fix bug|#1|pull request|PR/i)
+  })
 })
