@@ -99,4 +99,48 @@ describe('PipelineView', () => {
     render(<PipelineView features={[f]} />)
     expect(screen.getByText(/Missing QA sign-off/)).toBeInTheDocument()
   })
+
+  it('clicking a feature card shows FeatureDetail (feature title appears after fetch)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        feature: makeFeature({ id: 'f1', title: 'Offline mode' }),
+        use_cases: [],
+        gate_history: [],
+      }),
+    } as unknown as Response)
+
+    const { waitFor } = await import('@testing-library/react')
+    const user = (await import('@testing-library/user-event')).default.setup()
+    render(<PipelineView features={[makeFeature({ id: 'f1', title: 'Offline mode' })]} />)
+
+    const card = screen.getByTestId('feature-card-f1')
+    await user.click(card)
+
+    // FeatureDetail mounts and fetches — wait for the detail panel
+    await waitFor(() => {
+      expect(screen.getByTestId('feature-detail')).toBeInTheDocument()
+    })
+  })
+
+  it('clicking selected card again collapses FeatureDetail', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        feature: makeFeature({ id: 'f1' }),
+        use_cases: [],
+        gate_history: [],
+      }),
+    } as unknown as Response)
+
+    const { waitFor } = await import('@testing-library/react')
+    const user = (await import('@testing-library/user-event')).default.setup()
+    render(<PipelineView features={[makeFeature({ id: 'f1' })]} />)
+
+    const card = screen.getByTestId('feature-card-f1')
+    await user.click(card) // expand
+    await waitFor(() => expect(screen.getByTestId('feature-detail')).toBeInTheDocument())
+    await user.click(card) // collapse
+    await waitFor(() => expect(screen.queryByTestId('feature-detail')).not.toBeInTheDocument())
+  })
 })

@@ -214,6 +214,7 @@ export function ChannelSidebar({
             className="w-full text-left px-4 py-1.5 text-sm transition-colors rounded flex items-center"
             style={{ color: '#d1d2d3' }}
             data-testid="pipeline-link"
+            /* c8 ignore next 2 */
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#27292d')}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
           >

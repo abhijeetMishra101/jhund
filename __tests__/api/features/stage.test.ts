@@ -58,6 +58,80 @@ function setupAuthAndFeature(featureStage = 1) {
   })
 }
 
+describe('PUT /api/features/[id]/stage — auth & validation', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns 401 when user is not authenticated', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } })
+    const res = await PUT(makeReq({ to_stage: 2, gate_type: 'founder_approval' }), makeParams())
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 400 when body is invalid JSON', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const badReq = new Request(`http://localhost/api/features/${FEATURE_ID}/stage`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not-json{{{',
+    })
+    const res = await PUT(badReq, makeParams())
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toBe('Invalid JSON')
+  })
+
+  it('returns 400 when to_stage is missing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const res = await PUT(makeReq({ gate_type: 'founder_approval' }), makeParams())
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toContain('to_stage')
+  })
+
+  it('returns 400 when gate_type is missing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const res = await PUT(makeReq({ to_stage: 2 }), makeParams())
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toContain('gate_type')
+  })
+
+  it('returns 404 when user row not found', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom.mockReset()
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })
+    const res = await PUT(makeReq({ to_stage: 2, gate_type: 'founder_approval' }), makeParams())
+    expect(res.status).toBe(404)
+    const json = await res.json()
+    expect(json.error).toBe('User not found')
+  })
+
+  it('returns 404 when feature not found (anti-IDOR)', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    mockServiceFrom.mockReset()
+    // users query succeeds
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { workspace_id: WORKSPACE_ID }, error: null }),
+    })
+    // features anti-IDOR — not found
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
+    })
+    const res = await PUT(makeReq({ to_stage: 2, gate_type: 'founder_approval' }), makeParams())
+    expect(res.status).toBe(404)
+    const json = await res.json()
+    expect(json.error).toBe('Feature not found')
+  })
+})
+
 describe('PUT /api/features/[id]/stage', () => {
   beforeEach(() => vi.clearAllMocks())
 

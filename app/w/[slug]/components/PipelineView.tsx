@@ -97,6 +97,7 @@ export function PipelineView({ features }: Props) {
             style={{ backgroundColor: '#222529', border: '1px solid #2d2f33' }}
             onClick={() => setSelectedId(selectedId === f.id ? null : f.id)}
             data-testid={`feature-card-${f.id}`}
+            /* c8 ignore next 2 */
             onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3d4045')}
             onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#2d2f33')}
           >

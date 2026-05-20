@@ -268,4 +268,214 @@ describe('advanceStage', () => {
       'No use cases defined'
     )
   })
+
+  it('throws "Feature not found" when feature fetch fails', async () => {
+    mockServiceFrom.mockReset()
+
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
+    })
+
+    await expect(advanceStage(FEATURE_ID, 2, 'founder_approval')).rejects.toThrow('Feature not found')
+  })
+
+  it('throws when feature update fails', async () => {
+    mockServiceFrom.mockReset()
+
+    // advanceStage: get current stage
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { stage: 1 }, error: null }),
+    })
+    // inner checkGate: features status
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { status: 'active', blocking_reason: null, stage: 1 }, error: null }),
+    })
+    // inner checkGate: use cases — has some
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ count: 1, error: null }),
+    })
+    // update fails
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: { message: 'DB write error' } }),
+    })
+
+    await expect(advanceStage(FEATURE_ID, 2, 'auto_clear')).rejects.toThrow('Failed to update feature stage')
+  })
+
+  it('throws when gate_events insert fails', async () => {
+    mockServiceFrom.mockReset()
+
+    // advanceStage: get current stage
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { stage: 1 }, error: null }),
+    })
+    // inner checkGate: features status
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { status: 'active', blocking_reason: null, stage: 1 }, error: null }),
+    })
+    // inner checkGate: use cases — has some
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ count: 2, error: null }),
+    })
+    // update succeeds
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    })
+    // gate_events insert fails
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockResolvedValue({ error: { message: 'insert failed' } }),
+    })
+
+    await expect(advanceStage(FEATURE_ID, 2, 'auto_clear')).rejects.toThrow('Failed to record gate event')
+  })
+})
+
+describe('blockFeature — error paths', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('throws "Feature not found" when feature fetch fails', async () => {
+    mockServiceFrom.mockReset()
+
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
+    })
+
+    await expect(blockFeature(FEATURE_ID, 'blocker')).rejects.toThrow('Feature not found')
+  })
+
+  it('throws when update fails', async () => {
+    mockServiceFrom.mockReset()
+
+    // feature fetch
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { stage: 3 }, error: null }),
+    })
+    // update fails
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: { message: 'update error' } }),
+    })
+
+    await expect(blockFeature(FEATURE_ID, 'blocker')).rejects.toThrow('Failed to block feature')
+  })
+
+  it('throws when gate_events insert fails', async () => {
+    mockServiceFrom.mockReset()
+
+    // feature fetch
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { stage: 3 }, error: null }),
+    })
+    // update succeeds
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    })
+    // gate_events insert fails
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockResolvedValue({ error: { message: 'insert failed' } }),
+    })
+
+    await expect(blockFeature(FEATURE_ID, 'blocker')).rejects.toThrow('Failed to record gate event')
+  })
+})
+
+describe('checkGate — error paths', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns cleared:false when feature fetch fails', async () => {
+    mockServiceFrom.mockReset()
+
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
+    })
+
+    const result = await checkGate(FEATURE_ID, 1)
+    expect(result.cleared).toBe(false)
+    if (!result.cleared) expect(result.reason).toBe('Feature not found')
+  })
+
+  it('returns cleared:false when use case count query fails (stage 1→2)', async () => {
+    mockServiceFrom.mockReset()
+
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { status: 'active', blocking_reason: null, stage: 1 },
+        error: null,
+      }),
+    })
+    // use case count query fails
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ count: null, error: { message: 'DB error' } }),
+    })
+
+    const result = await checkGate(FEATURE_ID, 1)
+    expect(result.cleared).toBe(false)
+    if (!result.cleared) expect(result.reason).toBe('Failed to query use cases')
+  })
+
+  it('returns cleared:false when unverified query fails (stage 6→7)', async () => {
+    mockServiceFrom.mockReset()
+
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { status: 'active', blocking_reason: null, stage: 6 },
+        error: null,
+      }),
+    })
+    // unverified query fails
+    const secondIs = vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } })
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnValue({ is: secondIs }),
+    })
+
+    const result = await checkGate(FEATURE_ID, 6)
+    expect(result.cleared).toBe(false)
+    if (!result.cleared) expect(result.reason).toBe('Failed to query use case verification status')
+  })
+
+  it('returns cleared:true for stages other than 1 and 6 (active feature)', async () => {
+    mockServiceFrom.mockReset()
+
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { status: 'active', blocking_reason: null, stage: 3 },
+        error: null,
+      }),
+    })
+
+    const result = await checkGate(FEATURE_ID, 3)
+    expect(result.cleared).toBe(true)
+  })
 })
