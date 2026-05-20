@@ -1,12 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
-import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL } from './tools'
+import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL } from './tools'
 import { advanceStage } from '@/lib/feature-stages'
+import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dispatch'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
-export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL } from './tools'
+export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -125,7 +126,7 @@ export async function respondToMessage(
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL],
+    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL],
     system: [
       {
         type: 'text',
@@ -141,7 +142,59 @@ export async function respondToMessage(
     | Anthropic.ToolUseBlock
     | undefined
 
-  // 4a-i. Handle advance_feature_stage tool
+  // 4a-i. Handle create_feature tool
+  if (toolUseBlock?.name === 'create_feature') {
+    const input = toolUseBlock.input as {
+      title: string
+      description: string
+      complexity: 'hotfix' | 'small' | 'medium' | 'large'
+    }
+
+    let systemContent: string
+    try {
+      const { data: feature, error: featureError } = await supabase
+        .from('features')
+        .insert({
+          workspace_id: workspaceId,
+          title: input.title.trim(),
+          description: input.description.trim(),
+          complexity: input.complexity,
+          stage: 1,
+          status: 'active' as const,
+        })
+        .select('id')
+        .single()
+
+      if (featureError || !feature) {
+        throw new Error(featureError?.message ?? 'Insert returned no data')
+      }
+
+      systemContent = `✓ Feature "${input.title}" created in Pipeline (Stage 1 — Idea). ID: ${feature.id}`
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      systemContent = `Failed to create feature: ${message}`
+    }
+
+    const { data: stored, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: botRole.id,
+        content: systemContent,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !stored) {
+      throw new Error(`Failed to store system message: ${insertError?.message ?? 'no data'}`)
+    }
+
+    return stored.id
+  }
+
+  // 4a-ii. Handle advance_feature_stage tool
   if (toolUseBlock?.name === 'advance_feature_stage') {
     const input = toolUseBlock.input as {
       feature_id: string
@@ -152,8 +205,40 @@ export async function respondToMessage(
 
     let systemContent: string
     try {
+      // Fetch feature title before advancing (for handoff messages)
+      const { data: featureRow } = await supabase
+        .from('features')
+        .select('title')
+        .eq('id', input.feature_id)
+        .single()
+      const featureTitle = featureRow?.title ?? 'Feature'
+
       await advanceStage(input.feature_id, input.to_stage, input.gate_type, botRole.role_key, input.notes)
       systemContent = `✓ Feature advanced to stage ${input.to_stage}: ${input.notes}`
+
+      // Dispatch handoff to next stage owners (fire-and-forget, non-blocking)
+      getDispatchTargets(workspaceId, input.to_stage)
+        .then(async (targets) => {
+          if (targets.length === 0) return
+          const { parallel } = targets[0]
+
+          const dispatchOne = async (target: typeof targets[0]) => {
+            try {
+              await postHandoffMessage(target.channelId, featureTitle, input.to_stage)
+              await respondToMessage(target.channelId, workspaceId)
+            } catch (err) {
+              console.error('[dispatch] Handoff failed for channel', target.channelId, err)
+            }
+          }
+
+          if (parallel) {
+            await Promise.all(targets.map(dispatchOne))
+          } else {
+            for (const target of targets) await dispatchOne(target)
+          }
+        })
+        .catch((err) => console.error('[dispatch] getDispatchTargets failed:', err))
+
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       systemContent = `Gate blocked: ${message}`
@@ -165,7 +250,7 @@ export async function respondToMessage(
         channel_id: channelId,
         author_type: 'system',
         author_id: botRole.id,
-        content: systemContent,
+        content: systemContent!,
         ...(parentMessageId ? { parent_id: parentMessageId } : {}),
       })
       .select('id')

@@ -5,6 +5,8 @@ const mockMessagesCreate = vi.hoisted(() => vi.fn())
 const mockServiceFrom = vi.hoisted(() => vi.fn())
 const mockRpc = vi.hoisted(() => vi.fn())
 const mockAdvanceStage = vi.hoisted(() => vi.fn())
+const mockGetDispatchTargets = vi.hoisted(() => vi.fn())
+const mockPostHandoffMessage = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -16,6 +18,14 @@ vi.mock('@anthropic-ai/sdk', () => ({
 vi.mock('@/lib/feature-stages', () => ({
   advanceStage: mockAdvanceStage,
   checkGate: vi.fn(),
+}))
+
+// Mock dispatch so fire-and-forget doesn't consume DB mocks used by the main flow
+vi.mock('@/lib/feature-stages/dispatch', () => ({
+  getDispatchTargets: mockGetDispatchTargets,
+  postHandoffMessage: mockPostHandoffMessage,
+  handoffMessage: vi.fn().mockReturnValue('🔔 Test handoff'),
+  STAGE_DISPATCH: {},
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -584,6 +594,9 @@ describe('resolveBotForMessage — UC-3-05 @mention routing', () => {
 describe('respondToMessage — advance_feature_stage tool_use', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default: dispatch finds no targets (fire-and-forget is a no-op)
+    mockGetDispatchTargets.mockResolvedValue([])
+    mockPostHandoffMessage.mockResolvedValue('handoff-msg-id')
   })
 
   function advanceToolResponse(overrides: Record<string, unknown> = {}) {
@@ -606,9 +619,21 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
     }
   }
 
+  /** Mock for feature title fetch (new in Phase 16B dispatch wiring) */
+  function mockFeatureTitleFetch(title = 'Test Feature') {
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { title }, error: null }),
+    })
+  }
+
   it('calls advanceStage and inserts success system message', async () => {
     setupBotResolutionMocks()
     mockAdvanceStage.mockResolvedValue(undefined)
+
+    // feature title fetch (new: for dispatch handoff)
+    mockFeatureTitleFetch('Dark Mode')
 
     // system message insert
     const insertMock = vi.fn().mockReturnValue({
@@ -634,6 +659,9 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
     setupBotResolutionMocks()
     mockAdvanceStage.mockRejectedValue(new Error('No use cases defined yet'))
 
+    // feature title fetch (happens before advanceStage call, even when it throws)
+    mockFeatureTitleFetch()
+
     const insertMock = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: { id: 'sys-msg-2' }, error: null }),
@@ -653,6 +681,9 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
   it('throws when system message insert fails after advance_feature_stage', async () => {
     setupBotResolutionMocks()
     mockAdvanceStage.mockResolvedValue(undefined)
+
+    // feature title fetch
+    mockFeatureTitleFetch()
 
     // insert fails
     mockServiceFrom.mockReturnValueOnce({
