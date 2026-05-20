@@ -6,7 +6,7 @@
  * UC-16-03: Empty state renders when features array is empty
  */
 import '@testing-library/jest-dom'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PipelineView } from '@/app/w/[slug]/components/PipelineView'
 import type { Feature } from '@/lib/supabase/types'
