@@ -541,3 +541,40 @@ describe('WorkspaceShell — openDm', () => {
     })
   })
 })
+
+describe('WorkspaceShell — Pipeline panel', () => {
+  beforeEach(() => { vi.clearAllMocks(); vi.useRealTimers() })
+
+  it('clicking Pipeline button shows PipelinePanel and hides chat', async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response) // messages
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ features: [] }) } as Response) // /api/features
+
+    renderShell()
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    const pipelineBtn = screen.getByTestId('pipeline-link')
+    await userEvent.click(pipelineBtn)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pipeline-panel')).toBeInTheDocument()
+    })
+  })
+
+  it('clicking a channel after pipeline collapses pipeline and shows chat', async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response) // messages
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ features: [] }) } as Response) // /api/features
+
+    renderShell()
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    // Open pipeline
+    await userEvent.click(screen.getByTestId('pipeline-link'))
+    await waitFor(() => expect(screen.getByTestId('pipeline-panel')).toBeInTheDocument())
+
+    // Click a channel to collapse
+    await userEvent.click(screen.getByTestId('channel-ch-1'))
+    await waitFor(() => expect(screen.queryByTestId('pipeline-panel')).not.toBeInTheDocument())
+  })
+})
