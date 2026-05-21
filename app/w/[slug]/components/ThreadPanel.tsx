@@ -54,10 +54,10 @@ export function ThreadPanel({ parentMessage, channelId, botRoleMap, onClose, onP
   // Fetch replies
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/messages/${channelId}/threads/${parentMessage.id}`)
-      .then((r) => r.ok ? r.json() : { replies: [] })
-      .then((data: { replies: MessageWithThread[] }) => {
-        setReplies(data.replies ?? [])
+    fetch(`/api/channels/${channelId}/threads/${parentMessage.id}`)
+      .then((r) => r.ok ? r.json() : { messages: [] })
+      .then((data: { messages: MessageWithThread[] }) => {
+        setReplies(data.messages ?? [])
       })
       .catch(() => setReplies([]))
       .finally(() => setLoading(false))
