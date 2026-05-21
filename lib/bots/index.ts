@@ -290,8 +290,8 @@ export async function respondToMessage(
         ? `${introText}\n\n**Proposed action:** ${displayDescription}`
         : `I'd like to: **${displayDescription}**\n\nPlease approve or reject this action.`
 
-    // Empty actions array — bot called the tool with no actions (e.g. dispatch-triggered response).
-    // Fall through to plain text path using any text Claude included alongside the tool call.
+    // Empty actions — bot called the tool with no actions (e.g. dispatch-triggered response).
+    // Fall through to plain text using any text Claude included alongside the tool call.
     if (!actions.length) {
       const fallbackText = introText || input.plain_english_description || ''
       if (!fallbackText) throw new Error('propose_github_action called with empty actions and no text')
