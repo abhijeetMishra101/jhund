@@ -326,8 +326,9 @@ describe('respondToMessage', () => {
     expect(mockMessagesCreate).not.toHaveBeenCalled()
   })
 
-  it('throws when tool is called with empty actions array', async () => {
+  it('falls back to plain text when propose_github_action has empty actions array', async () => {
     setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-fallback'))
 
     mockMessagesCreate.mockResolvedValue({
       content: [
@@ -341,7 +342,8 @@ describe('respondToMessage', () => {
     })
 
     const { respondToMessage } = await import('@/lib/bots/index')
-    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('empty actions array')
+    const result = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(result).toBe('msg-fallback')
   })
 
   it('throws "Failed to create plan" when plan insert returns error', async () => {
