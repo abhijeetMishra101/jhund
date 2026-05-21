@@ -290,8 +290,24 @@ export async function respondToMessage(
         ? `${introText}\n\n**Proposed action:** ${displayDescription}`
         : `I'd like to: **${displayDescription}**\n\nPlease approve or reject this action.`
 
+    // Empty actions array — bot called the tool with no actions (e.g. dispatch-triggered response).
+    // Fall through to plain text path using any text Claude included alongside the tool call.
     if (!actions.length) {
-      throw new Error('propose_github_action called with an empty actions array — bot configuration issue')
+      const fallbackText = introText || input.plain_english_description || ''
+      if (!fallbackText) throw new Error('propose_github_action called with empty actions and no text')
+      const { data: stored, error: insertError } = await supabase
+        .from('messages')
+        .insert({
+          channel_id: channelId,
+          author_type: 'bot',
+          author_id: botRole.id,
+          content: fallbackText,
+          ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+        })
+        .select('id')
+        .single()
+      if (insertError || !stored) throw new Error(`Failed to store bot reply: ${insertError?.message ?? 'no data'}`)
+      return stored.id
     }
 
     // Create the plan row first
