@@ -66,7 +66,7 @@ function makeReply(id: string, content: string): MessageWithThread {
 function stubFetchReplies(replies: MessageWithThread[] = []) {
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
-    json: async () => ({ replies }),
+    json: async () => ({ messages: replies }),
   } as Response)
 }
 
@@ -135,7 +135,7 @@ describe('ThreadPanel', () => {
     )
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/messages/ch-1/threads/parent-1'
+        '/api/channels/ch-1/threads/parent-1'
       )
     })
   })
@@ -190,7 +190,7 @@ describe('ThreadPanel', () => {
 
   it('removes optimistic message when POST returns non-ok', async () => {
     global.fetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ replies: [] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ messages: [] }) } as Response)
       .mockResolvedValueOnce({ ok: false, json: async () => ({}) } as Response)
 
     render(
@@ -287,7 +287,7 @@ describe('ThreadPanel', () => {
     stubFetchReplies([])
     // After initial fetch, subsequent POSTs return a real id
     global.fetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ replies: [] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ messages: [] }) } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'new-reply-id' }) } as Response)
 
     render(
