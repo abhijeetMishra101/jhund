@@ -270,8 +270,13 @@ export async function respondToMessage(
       actions: Array<{ action_type: string; payload: Record<string, unknown> }>
     }
 
+    // Normalise actions — Claude occasionally returns a single object instead of an array
+    const actionsRaw = input.actions
+    const actions: Array<{ action_type: string; payload: Record<string, unknown> }> =
+      Array.isArray(actionsRaw) ? actionsRaw : actionsRaw ? [actionsRaw as never] : []
+
     console.log('[bot:tool_use] channel=%s role=%s actions=%s', channelId, botRole.role_key,
-      JSON.stringify((input.actions ?? []).map((a) => a.action_type)))
+      JSON.stringify(actions.map((a) => a.action_type)))
 
     // Get any text Claude included alongside the tool call
     const textBlock = response.content.find((b) => b.type === 'text') as
@@ -285,7 +290,6 @@ export async function respondToMessage(
         ? `${introText}\n\n**Proposed action:** ${displayDescription}`
         : `I'd like to: **${displayDescription}**\n\nPlease approve or reject this action.`
 
-    const actions = input.actions ?? []
     if (!actions.length) {
       throw new Error('propose_github_action called with an empty actions array — bot configuration issue')
     }
