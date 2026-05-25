@@ -51,7 +51,7 @@ describe('seedWorkspace', () => {
 
   it('inserts channel_members for every channel after seeding startup template', async () => {
     const startupChannels = [
-      { name: 'ops' }, { name: 'product' }, { name: 'engineering' },
+      { name: 'ops' }, { name: 'decisions' }, { name: 'product' }, { name: 'engineering' },
       { name: 'design' }, { name: 'security' }, { name: 'qa' },
       { name: 'ml' }, { name: 'standup' }, { name: 'retrospective' },
     ]
@@ -78,10 +78,16 @@ describe('seedWorkspace', () => {
       expect(r.bot_role_id).toBeDefined()
       expect(r.is_primary).toBe(true)
     })
+
+    // decisions channel must be present
+    const decisionsIdx = startupChannels.findIndex((c) => c.name === 'decisions')
+    expect(rows[decisionsIdx].channel_id).toBe(`ch-${decisionsIdx}`)
   })
 
-  it('inserts channel_members for the blank template (ops + standup + retrospective)', async () => {
-    const blankChannels = [{ name: 'ops' }, { name: 'standup' }, { name: 'retrospective' }]
+  it('inserts channel_members for the blank template (ops + decisions + standup + retrospective)', async () => {
+    const blankChannels = [
+      { name: 'ops' }, { name: 'decisions' }, { name: 'standup' }, { name: 'retrospective' },
+    ]
     const membersChain = membersInsertChain()
 
     mockFrom
@@ -95,7 +101,7 @@ describe('seedWorkspace', () => {
     const rows: { channel_id: string; bot_role_id: string; is_primary: boolean }[] =
       membersChain._insertFn.mock.calls[0][0]
 
-    expect(rows.length).toBe(3)
+    expect(rows.length).toBe(blankChannels.length)
     expect(rows.every((r) => r.is_primary === true)).toBe(true)
   })
 

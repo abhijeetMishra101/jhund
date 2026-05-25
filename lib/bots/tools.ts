@@ -86,6 +86,59 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
   },
 }
 
+/** Records a decision made by the bot, with an optional action to auto-dispatch. */
+export const RECORD_DECISION_TOOL: Anthropic.Tool = {
+  name: 'record_decision',
+  description:
+    'Record a decision you have made, with an optional action to execute. ' +
+    'Use this when you have reached a clear decision (not just analysis) — something scoped in or out, ' +
+    'a priority set, an owner assigned, or a plan changed. ' +
+    'If action is provided, it will be dispatched to #decisions for execution.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      title: {
+        type: 'string',
+        description: 'Short decision title (< 80 chars)',
+      },
+      summary: {
+        type: 'string',
+        description: 'Full decision rationale and context',
+      },
+      action: {
+        type: 'string',
+        description:
+          'Optional: specific action to execute now (e.g. "Open a PR to add rate limiting to /api/messages")',
+      },
+    },
+    required: ['title', 'summary'],
+  },
+}
+
+/** Commits a structured Markdown summary of this discussion to the GitHub repo docs folder. */
+export const DOCUMENT_DISCUSSION_TOOL: Anthropic.Tool = {
+  name: 'document_discussion',
+  description:
+    'Save a written summary of this discussion for future reference. ' +
+    'Use this after a substantive discussion to create a persistent record — ' +
+    'decisions made, options considered, and next steps. ' +
+    'If the workspace has a connected GitHub repo the summary will be saved there automatically.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      title: {
+        type: 'string',
+        description: 'Discussion title',
+      },
+      summary: {
+        type: 'string',
+        description: 'Full Markdown summary of the discussion',
+      },
+    },
+    required: ['title', 'summary'],
+  },
+}
+
 /** Signals that a feature is ready to move to the next pipeline stage. */
 export const ADVANCE_FEATURE_STAGE_TOOL: Anthropic.Tool = {
   name: 'advance_feature_stage',

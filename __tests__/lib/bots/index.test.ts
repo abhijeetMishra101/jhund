@@ -7,6 +7,10 @@ const mockRpc = vi.hoisted(() => vi.fn())
 const mockAdvanceStage = vi.hoisted(() => vi.fn())
 const mockGetDispatchTargets = vi.hoisted(() => vi.fn())
 const mockPostHandoffMessage = vi.hoisted(() => vi.fn())
+const mockRecordDecision = vi.hoisted(() => vi.fn())
+const mockPostDecisionMessage = vi.hoisted(() => vi.fn())
+const mockMarkDecisionDispatched = vi.hoisted(() => vi.fn())
+const mockCommitDiscussionDoc = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -34,6 +38,19 @@ vi.mock('@/lib/supabase/server', () => ({
     from: mockServiceFrom,
     rpc: mockRpc,
   }),
+}))
+
+vi.mock('@/lib/decisions/record', () => ({
+  recordDecision: mockRecordDecision,
+}))
+
+vi.mock('@/lib/decisions/dispatch', () => ({
+  postDecisionMessage: mockPostDecisionMessage,
+  markDecisionDispatched: mockMarkDecisionDispatched,
+}))
+
+vi.mock('@/lib/decisions/github-commit', () => ({
+  commitDiscussionDoc: mockCommitDiscussionDoc,
 }))
 
 // Mock context so we don't have to wire up the full message-history chain
@@ -880,6 +897,334 @@ describe('respondToMessage — create_feature tool_use', () => {
     mockServiceFrom.mockReturnValueOnce(failingInsertChain('insert failed'))
 
     mockMessagesCreate.mockResolvedValue(createFeatureToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
+  })
+})
+
+// ── record_decision tool handler ──────────────────────────────────────────────
+describe('respondToMessage — record_decision tool_use', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPostDecisionMessage.mockResolvedValue(null)
+    mockMarkDecisionDispatched.mockResolvedValue(undefined)
+  })
+
+  function recordDecisionToolResponse(input: { title: string; summary: string; action?: string }) {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-record-decision',
+          name: 'record_decision',
+          input,
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  const MOCK_DECISION = {
+    id: 'decision-uuid',
+    workspace_id: WORKSPACE_ID,
+    channel_id: CHANNEL_ID,
+    bot_role_id: BOT_ROLE.id,
+    title: 'Use PostgreSQL',
+    summary: 'We will use PostgreSQL for the primary database.',
+    action: null,
+    action_dispatched_at: null,
+    created_at: '2026-01-01T00:00:00Z',
+  }
+
+  it('happy path without action — recordDecision called, confirmation message inserted', async () => {
+    setupBotResolutionMocks()
+    mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION })
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-decision-ok' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      recordDecisionToolResponse({ title: 'Use PostgreSQL', summary: 'Primary DB choice.' })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-decision-ok')
+    expect(mockRecordDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: WORKSPACE_ID,
+        channelId: CHANNEL_ID,
+        title: 'Use PostgreSQL',
+        summary: 'Primary DB choice.',
+      })
+    )
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Decision recorded:')
+    expect(content).toContain('Use PostgreSQL')
+    // No dispatch suffix when no action
+    expect(content).not.toContain('#decisions')
+    expect(mockPostDecisionMessage).not.toHaveBeenCalled()
+  })
+
+  it('happy path with action — confirmation includes dispatch notice', async () => {
+    setupBotResolutionMocks()
+    mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION, id: 'decision-with-action' })
+    // postDecisionMessage returns null → dispatch branch still appends suffix
+    mockPostDecisionMessage.mockResolvedValue(null)
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-decision-action' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      recordDecisionToolResponse({
+        title: 'Use PostgreSQL',
+        summary: 'Primary DB choice.',
+        action: 'Set up PostgreSQL on production.',
+      })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-decision-action')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Decision recorded:')
+    expect(content).toContain('Your team has been asked to act on this in #decisions.')
+    expect(mockPostDecisionMessage).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      'Set up PostgreSQL on production.',
+      BOT_ROLE.id
+    )
+  })
+
+  it('DB error path — recordDecision throws, fallback error message inserted', async () => {
+    setupBotResolutionMocks()
+    mockRecordDecision.mockRejectedValue(new Error('insert constraint violation'))
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-decision-err' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      recordDecisionToolResponse({ title: 'Use PostgreSQL', summary: 'Primary DB choice.' })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-decision-err')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Failed to record decision:')
+    expect(content).toContain('insert constraint violation')
+  })
+
+  it('throws when system message insert fails after record_decision', async () => {
+    setupBotResolutionMocks()
+    mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION })
+
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('db down'))
+
+    mockMessagesCreate.mockResolvedValue(
+      recordDecisionToolResponse({ title: 'Use PostgreSQL', summary: 'Primary DB choice.' })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
+  })
+
+  it('with action — fires dispatch when postDecisionMessage returns a channel id', async () => {
+    setupBotResolutionMocks()
+    mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION, id: 'decision-dispatched' })
+    // postDecisionMessage returns a valid result → the .then() branch enters the try block
+    mockPostDecisionMessage.mockResolvedValue({
+      decisionsChannelId: 'decisions-ch-id',
+      messageId: 'decisions-msg-id',
+    })
+    mockMarkDecisionDispatched.mockResolvedValue(undefined)
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-dispatch-ok' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    // The fire-and-forget calls respondToMessage on decisionsChannelId — we need
+    // bot resolution + message insert mocks for that nested call too.
+    // Set them up so the recursive call can complete cleanly.
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('decisions-reply-id'))
+    mockMessagesCreate
+      .mockResolvedValueOnce(
+        recordDecisionToolResponse({
+          title: 'Use PostgreSQL',
+          summary: 'Primary DB choice.',
+          action: 'Set up PostgreSQL on production.',
+        })
+      )
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: 'On it!' }],
+        stop_reason: 'end_turn',
+      })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(id).toBe('sys-dispatch-ok')
+
+    // Flush microtasks so the fire-and-forget .then() completes
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockMarkDecisionDispatched).toHaveBeenCalledWith('decision-dispatched')
+  })
+
+  it('with action — .catch() handles postDecisionMessage rejection gracefully', async () => {
+    setupBotResolutionMocks()
+    mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION })
+    mockPostDecisionMessage.mockRejectedValue(new Error('channel lookup failed'))
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-catch-ok' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      recordDecisionToolResponse({
+        title: 'Use PostgreSQL',
+        summary: 'Primary DB choice.',
+        action: 'Set up PostgreSQL.',
+      })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    // Should not throw — .catch() handles the rejection
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+    expect(id).toBe('sys-catch-ok')
+
+    // Flush microtasks
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+})
+
+// ── document_discussion tool handler ─────────────────────────────────────────
+describe('respondToMessage — document_discussion tool_use', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function documentDiscussionToolResponse(input: { title: string; summary: string }) {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-document-discussion',
+          name: 'document_discussion',
+          input,
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  it('happy path with GitHub connected — confirmation includes view link', async () => {
+    setupBotResolutionMocks()
+    mockCommitDiscussionDoc.mockResolvedValue({
+      committed: true,
+      path: 'docs/discussions/2026-01-01-rate-limiting.md',
+      url: 'https://github.com/owner/repo/blob/main/docs/discussions/2026-01-01-rate-limiting.md',
+    })
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-doc-ok' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      documentDiscussionToolResponse({ title: 'Rate Limiting Strategy', summary: 'We discussed rate limiting approaches.' })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-doc-ok')
+    expect(mockCommitDiscussionDoc).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: WORKSPACE_ID,
+        title: 'Rate Limiting Strategy',
+        summary: 'We discussed rate limiting approaches.',
+      })
+    )
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('✓ Discussion saved')
+    expect(content).toContain('[View the document]')
+    expect(content).toContain('https://github.com')
+  })
+
+  it('no GitHub path — commitDiscussionDoc returns committed:false, fallback message', async () => {
+    setupBotResolutionMocks()
+    mockCommitDiscussionDoc.mockResolvedValue({ committed: false })
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-doc-no-gh' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      documentDiscussionToolResponse({ title: 'Auth Discussion', summary: 'Summary of the auth discussion.' })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-doc-no-gh')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('no GitHub connected')
+    expect(content).toContain('Auth Discussion')
+  })
+
+  it('commitDiscussionDoc throws — fallback error message inserted', async () => {
+    setupBotResolutionMocks()
+    mockCommitDiscussionDoc.mockRejectedValue(new Error('Octokit rate limit'))
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-doc-err' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(
+      documentDiscussionToolResponse({ title: 'Auth Discussion', summary: 'Summary.' })
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-doc-err')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Failed to document discussion:')
+    expect(content).toContain('Octokit rate limit')
+  })
+
+  it('throws when system message insert fails after document_discussion', async () => {
+    setupBotResolutionMocks()
+    mockCommitDiscussionDoc.mockResolvedValue({ committed: false })
+
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('db error'))
+
+    mockMessagesCreate.mockResolvedValue(
+      documentDiscussionToolResponse({ title: 'Auth Discussion', summary: 'Summary.' })
+    )
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')

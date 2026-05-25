@@ -12,6 +12,7 @@ const SEED_ROLE_KEYS = ['ops', 'product', 'backend', 'design', 'security', 'qa',
 const TEMPLATE_CHANNELS: Record<string, { name: string; display_name: string; role_key: string }[]> = {
   startup: [
     { name: 'ops',           display_name: '# ops',           role_key: 'ops' },
+    { name: 'decisions',     display_name: '# decisions',     role_key: 'ops' },
     { name: 'product',       display_name: '# product',       role_key: 'product' },
     { name: 'engineering',   display_name: '# engineering',   role_key: 'backend' },
     { name: 'design',        display_name: '# design',        role_key: 'design' },
@@ -23,6 +24,7 @@ const TEMPLATE_CHANNELS: Record<string, { name: string; display_name: string; ro
   ],
   enterprise: [
     { name: 'ops',           display_name: '# ops',           role_key: 'ops' },
+    { name: 'decisions',     display_name: '# decisions',     role_key: 'ops' },
     { name: 'product',       display_name: '# product',       role_key: 'product' },
     { name: 'engineering',   display_name: '# engineering',   role_key: 'backend' },
     { name: 'design',        display_name: '# design',        role_key: 'design' },
@@ -34,6 +36,7 @@ const TEMPLATE_CHANNELS: Record<string, { name: string; display_name: string; ro
   ],
   blank: [
     { name: 'ops',           display_name: '# ops',           role_key: 'ops' },
+    { name: 'decisions',     display_name: '# decisions',     role_key: 'ops' },
     { name: 'standup',       display_name: '# standup',       role_key: 'ops' },
     { name: 'retrospective', display_name: '# retrospective', role_key: 'ops' },
   ],
