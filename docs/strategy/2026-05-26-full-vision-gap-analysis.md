@@ -127,7 +127,47 @@ Without this, asking the Backend bot to build M2 is like hiring a developer on t
 
 ---
 
-## Gap 6 — No PR Review Loop
+## Gap 6 — Discussions Are Not Documented
+
+**What exists**: Every message is stored in the DB and eventually archived. There is no mechanism for a bot to produce a structured summary of a conversation and commit it somewhere durable. Chat is ephemeral. When the founder and the Architect spend 20 messages working through the data model for M2, that conversation gets archived and is effectively lost.
+
+**What the full vision requires**: Every significant bot-founder and bot-bot exchange — design discussions, clarifications, scope decisions, technical debates — should be summarised and committed as a document at the end of the exchange, or at minimum when a stage advances. The summary lives in GitHub where the next bot in the chain can read it. It is not a transcript. It is a structured record: what was discussed, what was agreed, what was left open.
+
+**Concrete failure in the guinea pig test**: The Architect and founder have a 30-message discussion about M2's architecture — trade-offs between two approaches, final decision made. Feature advances. Backend bot is dispatched. It has never seen that conversation. It reads only the last 20 messages in its own channel. It picks the other approach because it never saw why that one was rejected.
+
+**What needs to be built**:
+- A `document_discussion` bot tool — bot calls it at the end of a significant exchange with a structured summary, it commits the summary to `docs/features/[slug]/discussions/[timestamp]-[topic].md`
+- Bot system prompts updated: at stage advance, always call `document_discussion` before calling `advance_feature_stage`
+- Dispatch message includes path to the discussion doc, not just the artifact doc
+
+**Severity**: P0. Upgraded to guinea pig gate blocker per founder decision 2026-05-26. Without this, every stage transition is a memory wipe.
+
+---
+
+## Gap 7 — Decisions Are Identified But Do Not Trigger Actions
+
+**What exists**: Nothing. Phase 19 (decision accountability) is specced but not built. Even when built as currently specced, it records decisions. It does not act on them.
+
+**What the full vision requires**: When a decision is identified — by any bot or by the founder in conversation — two things must happen automatically:
+
+1. The decision is recorded (who decided, what, why, when, linked to feature)
+2. The decision triggers a concrete follow-up action by the responsible bot: a task created, a GitHub issue opened, a next stage dispatched, a doc committed
+
+The second part is what makes this "self-sustaining." A decision that is only recorded is still a manual system — someone has to chase the follow-up. A decision that triggers an action is an autonomous system.
+
+**Concrete failure in the guinea pig test**: Architect decides "M2 will use Redis for caching." Decision is recorded (if Phase 19 is built). Nothing else happens. Founder has to separately tell the Backend bot "remember, use Redis." Then tell Casey to write cache invalidation tests. Then tell the Architect to document the Redis schema. The decision happened once; the founder chased it three times.
+
+**What needs to be built**:
+- `record_decision` tool extended with an `action` field: what should happen next, which role owns it
+- When `record_decision` is called with an action, the system automatically dispatches that action to the owning bot's channel
+- Owning bot receives the dispatch and acts (creates issue, commits doc, advances stage)
+- Founder sees the chain in #decisions: decision → action taken → confirmation
+
+**Severity**: P0. Upgraded to guinea pig gate blocker per founder decision 2026-05-26. This is the difference between a logging system and an autonomous team.
+
+---
+
+## Gap 8 — No PR Review Loop
 
 **What exists**: A bot creates a PR. The GitHub webhook is wired up and can receive events. What happens when the founder or another bot leaves a review comment on the PR? Currently: nothing. The webhook receives the event and ignores it.
 
@@ -212,9 +252,9 @@ Currently the bot can do step 6 (if asked in one message) or step 7 (if asked). 
 
 ## Summary: What Must Be Built Before the Guinea Pig Test
 
-> **Founder decision 2026-05-26**: All 5 core gaps are P0. Guinea pig gate does not open until all 5 are working end-to-end. No exceptions.
+> **Founder decision 2026-05-26**: All 7 core gaps are P0. Guinea pig gate does not open until all 7 are working end-to-end. No exceptions.
 
-### P0 — Guinea Pig Gate Blockers (all 5 must be done)
+### P0 — Guinea Pig Gate Blockers (all 7 must be done)
 
 | # | Gap | Phase | Estimated |
 |---|---|---|---|
@@ -223,20 +263,22 @@ Currently the bot can do step 6 (if asked in one message) or step 7 (if asked). 
 | 3 | Artifact convention — docs committed to GitHub per stage | Phase 21 | 0.5 session |
 | 4 | Workspace-specific bot context — `CONTEXT.md` injection | Phase 22 | 0.5 session |
 | 5 | Auto-approve non-main commits — remove friction for intermediate writes | Phase 23 | 1 session |
+| 6 | Discussions documented — `document_discussion` tool committed to GitHub | Phase 19 | 1 session |
+| 7 | Decisions trigger actions — `record_decision` with `action` field dispatches work | Phase 19 | 0.5 session |
 | + | SMTP reliability (18-C) | Phase 18 remaining | 0.5 session (config) |
 | + | `channel_members` auto-seed (18-D) | Phase 18 remaining | 0.5 session |
 
-**Total to guinea pig gate**: ~5 sessions
+**Total to guinea pig gate**: ~7 sessions
 
 ### P1 — Full Vision (after guinea pig gate)
 
 | Gap | Phase | Estimated |
 |---|---|---|
 | PR review loop (comment → bot responds) | Phase 24 | 1 session |
-| Decision accountability / `record_decision` tool | Phase 19 | 1 session |
 | Long-term memory (feature summary injection) | Phase 25 | 1 session |
+| Autonomous multi-step work loop | Phase 26 | 2 sessions |
 
-**Total P1 effort**: ~3 sessions
+**Total P1 effort**: ~4 sessions
 
 ### P2 — Full vision, not needed for guinea pig test
 
@@ -269,61 +311,99 @@ That is not "self-sustaining AI team." That is expensive chat.
 ## Phase Sequence to Guinea Pig Gate
 
 ```
-Phase 18 remaining  SMTP (18-C) + channel_members seed (18-D)      0.5 session
-Phase 20            GitHub read access — read_file bot tool          1 session
-Phase 21            Artifact dispatch — context + docs per stage     1.5 sessions
-Phase 22            Workspace context — CONTEXT.md injection         0.5 session
-Phase 23            Auto-approve — non-main commits skip modal       1 session
-────────────────────────────────────────────────────────────────────────────────
-🦆 Guinea pig gate  Fashion pipeline M2: bot reads → designs →       Manual gate
-                    commits → advances → next bot continues
-────────────────────────────────────────────────────────────────────────────────
-Phase 19            Decision accountability — record_decision tool   1 session
-Phase 24            PR review loop                                   1 session
-Phase 25            Long-term memory — feature summary injection     1 session
-────────────────────────────────────────────────────────────────────────────────
-Full vision gate    Founder states goal, team ships it               Ongoing
+Phase 18 remaining  SMTP (18-C) + channel_members seed (18-D)           0.5 session
+Phase 19            Decisions + discussions — record_decision,
+                    document_discussion, action dispatch                  1.5 sessions
+Phase 20            GitHub read access — read_file bot tool               1 session
+Phase 21            Artifact dispatch — context + artifact paths
+                    included in every stage handoff                       1.5 sessions
+Phase 22            Workspace context — CONTEXT.md injection              0.5 session
+Phase 23            Auto-approve — bot/* commits skip approval modal      1 session
+────────────────────────────────────────────────────────────────────────────────────
+🦆 GUINEA PIG GATE  End of Phase 23
+                    Fashion pipeline M2: bot reads codebase → discusses
+                    design with founder (documented) → commits design doc
+                    (auto-approved) → advances stage → Backend bot reads
+                    artifact + discussion → builds → PR to main (founder
+                    approves) → decision triggers QA dispatch → Casey
+                    acts without being asked
+────────────────────────────────────────────────────────────────────────────────────
+Phase 24            PR review loop                                        1 session
+Phase 25            Long-term memory — feature summary injection          1 session
+Phase 26            Autonomous multi-step work loop                       2 sessions
+────────────────────────────────────────────────────────────────────────────────────
+Full vision gate    Founder states goal, team ships it                    Ongoing
 ```
+
+---
 
 ## Use Cases Per Phase (Pre-Phase Gate)
 
 ### Phase 18 Remaining
 
 **UC-18C-01** [P0]: Founder clicks magic link and is logged in within 60 seconds  
-**UC-18D-01** [P0]: New workspace is created → all hired bots are auto-added to their primary channel without SQL
+**UC-18D-01** [P0]: New workspace created → all hired bots are auto-added to their primary channel without manual SQL
+
+---
+
+### Phase 19 — Decisions + Discussions
+
+**UC-19-01** [P0]: Bot calls `record_decision` mid-conversation — decision is stored with role, reason, feature link, timestamp  
+**UC-19-02** [P0]: `record_decision` includes an `action` field specifying what should happen next and which role owns it  
+**UC-19-03** [P0]: When `record_decision` is called with an action, the system dispatches that action to the owning bot's channel automatically — no founder intervention  
+**UC-19-04** [P0]: Owning bot receives the dispatched action and responds (creates issue, commits doc, advances stage)  
+**UC-19-05** [P0]: Founder sees the full chain in #decisions: decision logged → action dispatched → bot confirmation  
+**UC-19-06** [P0]: Bot calls `document_discussion` at the end of a significant exchange — structured summary committed to `docs/features/[slug]/discussions/[timestamp]-[topic].md`  
+**UC-19-07** [P0]: When a stage advances, the dispatch message to the next bot includes the path to the discussion doc (if one was committed in this stage)  
+**UC-19-08** [P0]: Next bot reads the discussion doc path from the dispatch and fetches it before responding  
+**UC-19-09** [P1]: Founder can browse all recorded decisions for a feature in the Pipeline view  
+**UC-19-10** [P1]: If `document_discussion` commit fails, bot surfaces the error in channel rather than silently failing
+
+---
 
 ### Phase 20 — GitHub Read Access
 
-**UC-20-01** [P0]: Bot can read any file from the connected GitHub repo by path  
-**UC-20-02** [P0]: Bot reads an existing module before proposing changes — no hallucinated imports  
-**UC-20-03** [P0]: Bot surfaces a `read_file` result inline in its response ("I checked `src/m1/collector.py` and found...")  
-**UC-20-04** [P1]: Bot gracefully handles file not found (path error, branch mismatch)  
-**UC-20-05** [P1]: Bot reads multiple files in one dispatch (e.g. reads M1 module + requirements doc)
+**UC-20-01** [P0]: Bot can read any file from the connected GitHub repo by path and branch  
+**UC-20-02** [P0]: Bot reads an existing module before proposing changes — response references actual code, no hallucinated imports  
+**UC-20-03** [P0]: Bot surfaces what it read inline ("I checked `src/m1/collector.py` — it uses FastAPI, so M2 will too")  
+**UC-20-04** [P0]: Bot reads multiple files in one dispatch (e.g. reads M1 module + architecture doc)  
+**UC-20-05** [P1]: Bot handles file not found gracefully — surfaces the error, does not hallucinate a file  
+**UC-20-06** [P1]: File reads are cached within a single dispatch to avoid redundant API calls
+
+---
 
 ### Phase 21 — Artifact Dispatch
 
-**UC-21-01** [P0]: When Stage 4 (Architecture) advances, the dispatch message to Stage 5 (Build) includes the path to the ADR committed in Stage 4  
-**UC-21-02** [P0]: Bot at Stage 5 reads the ADR path from the dispatch message, fetches it, and uses it as context  
-**UC-21-03** [P0]: Each stage's bot commits its output to a predictable path: `docs/features/[slug]/[stage]-[name].md`  
-**UC-21-04** [P0]: Founder can see the artifact path in the pipeline view for each feature stage  
-**UC-21-05** [P1]: If a bot's artifact commit fails, dispatch is not sent and founder is notified
+**UC-21-01** [P0]: Each stage's bot commits its output to a predictable path before calling `advance_feature_stage`: `docs/features/[slug]/stage-[N]-[name].md`  
+**UC-21-02** [P0]: The dispatch message sent to the next stage includes the artifact path — not just "Stage 5 is starting"  
+**UC-21-03** [P0]: Receiving bot reads the artifact path from the dispatch, fetches the doc, and uses it as context before doing any work  
+**UC-21-04** [P0]: If a bot has not committed an artifact, it cannot advance the stage — `advance_feature_stage` returns an error requiring an artifact path  
+**UC-21-05** [P0]: Founder can see the artifact path for each completed stage in the Pipeline feature detail view  
+**UC-21-06** [P1]: If artifact commit fails, the bot surfaces the error and does not advance the stage  
+**UC-21-07** [P1]: Artifact paths follow a consistent naming convention enforced by the system, not by bot convention
+
+---
 
 ### Phase 22 — Workspace Context
 
-**UC-22-01** [P0]: Founder can set a project description in workspace settings ("This is the fashion trend pipeline…")  
-**UC-22-02** [P0]: That description is injected into every bot's system prompt on every call  
-**UC-22-03** [P0]: Bot responses reference project-specific details, not generic Jhund boilerplate  
-**UC-22-04** [P1]: Founder can update the context and all bots reflect it immediately (no re-hire needed)  
-**UC-22-05** [P1]: Context is capped at 500 tokens — if longer, truncated with a warning
+**UC-22-01** [P0]: Founder sets a project description in workspace settings (free text, up to 800 tokens)  
+**UC-22-02** [P0]: That description is prepended to every bot's system prompt on every Claude call  
+**UC-22-03** [P0]: Bot responses reference project-specific details — tech stack, conventions, module names — not generic boilerplate  
+**UC-22-04** [P0]: If no context is set, bots display a prompt in #ops: "Set your project context so your team understands the codebase"  
+**UC-22-05** [P1]: Founder can update the context and all bots reflect it on the next call — no re-hire needed  
+**UC-22-06** [P1]: Context length warning shown in settings if founder exceeds the token cap
+
+---
 
 ### Phase 23 — Auto-Approve
 
-**UC-23-01** [P0]: A bot committing to a `bot/*` branch does not show the plan approval modal — it executes immediately  
-**UC-23-02** [P0]: A bot opening a PR to `main` ALWAYS shows the plan approval modal — no exceptions  
-**UC-23-03** [P0]: A bot creating an issue shows the plan approval modal  
-**UC-23-04** [P0]: Founder can see in workspace settings which action types are auto-approved  
-**UC-23-05** [P1]: Auto-approved actions still appear in the conversation as a confirmation message ("✅ Committed `docs/features/m2/design.md` to `bot/m2-design`")  
-**UC-23-06** [P1]: Founder can disable auto-approve entirely from settings — reverts to requiring approval for everything
+**UC-23-01** [P0]: A bot committing to any `bot/*` branch executes immediately — no plan approval modal  
+**UC-23-02** [P0]: A bot opening a PR to `main` ALWAYS shows the plan approval modal — no auto-approve exception  
+**UC-23-03** [P0]: A bot creating a GitHub issue shows the plan approval modal  
+**UC-23-04** [P0]: Auto-approved actions appear in the conversation as an immediate confirmation: "✅ Committed `docs/features/m2/stage-3-design.md` to `bot/m2-design`"  
+**UC-23-05** [P0]: Founder can see which action types are auto-approved in workspace settings  
+**UC-23-06** [P1]: Founder can disable auto-approve entirely — reverts to requiring approval for every action  
+**UC-23-07** [P1]: If an auto-approved action fails (GitHub API error), bot surfaces the failure in channel with the error detail
 
 **Total to guinea pig gate**: ~4 sessions of engineering
 **Total to full vision (P0+P1)**: ~8 sessions of engineering
