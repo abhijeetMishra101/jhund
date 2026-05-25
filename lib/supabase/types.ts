@@ -381,6 +381,42 @@ export type Database = {
         }
         Relationships: []
       }
+      decision_events: {
+        Row: {
+          id: string
+          workspace_id: string
+          channel_id: string
+          bot_role_id: string
+          title: string
+          summary: string
+          action: string | null
+          action_dispatched_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          channel_id: string
+          bot_role_id: string
+          title: string
+          summary: string
+          action?: string | null
+          action_dispatched_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          channel_id?: string
+          bot_role_id?: string
+          title?: string
+          summary?: string
+          action?: string | null
+          action_dispatched_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       gate_events: {
         Row: {
           id: string
@@ -478,6 +514,9 @@ export interface GateEvent {
   notes: string | null
   created_at: string
 }
+
+// Phase 19 — Decision events
+export type DecisionEvent = Database['public']['Tables']['decision_events']['Row']
 
 // Phase 14 — extended API shapes (from new backend endpoints)
 export type PresenceStatus = 'online' | 'busy' | 'offline'

@@ -1,13 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
-import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL } from './tools'
+import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL } from './tools'
 import { advanceStage } from '@/lib/feature-stages'
 import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dispatch'
+import { recordDecision } from '@/lib/decisions/record'
+import { postDecisionMessage, markDecisionDispatched } from '@/lib/decisions/dispatch'
+import { commitDiscussionDoc } from '@/lib/decisions/github-commit'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
-export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL } from './tools'
+export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -126,7 +129,7 @@ export async function respondToMessage(
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL],
+    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL],
     system: [
       {
         type: 'text',
@@ -194,7 +197,113 @@ export async function respondToMessage(
     return stored.id
   }
 
-  // 4a-ii. Handle advance_feature_stage tool
+  // 4a-ii. Handle record_decision tool
+  if (toolUseBlock?.name === 'record_decision') {
+    const input = toolUseBlock.input as {
+      title: string
+      summary: string
+      action?: string
+    }
+
+    let systemContent: string
+    try {
+      const decision = await recordDecision({
+        workspaceId,
+        channelId,
+        botRoleId: botRole.id,
+        title: input.title,
+        summary: input.summary,
+        action: input.action,
+      })
+
+      systemContent = `✓ Decision recorded: ${input.title}`
+
+      // If an action was specified, dispatch it to #decisions (fire-and-forget)
+      if (input.action) {
+        postDecisionMessage(workspaceId, input.action, botRole.id)
+          .then(async (result) => {
+            if (!result) return
+            try {
+              await respondToMessage(result.decisionsChannelId, workspaceId)
+              await markDecisionDispatched(decision.id)
+            } catch (err) {
+              console.error('[decisions] Dispatch failed for decision', decision.id, err)
+            }
+          })
+          .catch((err) => console.error('[decisions] postDecisionMessage failed:', err))
+
+        systemContent += ' Action dispatched to #decisions.'
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      systemContent = `Failed to record decision: ${message}`
+    }
+
+    const { data: stored, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: botRole.id,
+        content: systemContent!,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !stored) {
+      throw new Error(`Failed to store system message: ${insertError?.message ?? 'no data'}`)
+    }
+
+    return stored.id
+  }
+
+  // 4a-iii. Handle document_discussion tool
+  if (toolUseBlock?.name === 'document_discussion') {
+    const input = toolUseBlock.input as {
+      title: string
+      summary: string
+    }
+
+    let systemContent: string
+    try {
+      const result = await commitDiscussionDoc({
+        workspaceId,
+        title: input.title,
+        summary: input.summary,
+      })
+
+      if (result.committed) {
+        systemContent = `✓ Discussion documented at \`${result.path}\``
+        if (result.url) systemContent += ` — [view on GitHub](${result.url})`
+      } else {
+        systemContent = `Discussion summary stored locally (no GitHub connected): **${input.title}**\n\n${input.summary}`
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      systemContent = `Failed to document discussion: ${message}`
+    }
+
+    const { data: stored, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: botRole.id,
+        content: systemContent!,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !stored) {
+      throw new Error(`Failed to store system message: ${insertError?.message ?? 'no data'}`)
+    }
+
+    return stored.id
+  }
+
+  // 4a-iv. Handle advance_feature_stage tool
   if (toolUseBlock?.name === 'advance_feature_stage') {
     const input = toolUseBlock.input as {
       feature_id: string
@@ -263,7 +372,7 @@ export async function respondToMessage(
     return stored.id
   }
 
-  // 4a-ii. Handle propose_github_action tool
+  // 4a-v. Handle propose_github_action tool
   if (toolUseBlock) {
     const input = toolUseBlock.input as {
       plain_english_description: string
