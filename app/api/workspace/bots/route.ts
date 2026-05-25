@@ -62,6 +62,13 @@ export async function POST(request: Request) {
 
   if (channelError || !channel) return NextResponse.json({ error: 'Failed to create channel' }, { status: 500 })
 
+  // Seed channel_members — bot is primary in their own channel
+  await service.from('channel_members').insert({
+    channel_id: channel.id,
+    bot_role_id: bot.id,
+    is_primary: true,
+  })
+
   // Post welcome message in new channel
   await service.from('messages').insert({
     channel_id: channel.id,

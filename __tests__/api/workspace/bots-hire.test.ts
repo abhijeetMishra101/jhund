@@ -172,6 +172,8 @@ describe('POST /api/workspace/bots (hire)', () => {
           }),
         }),
       })
+      // channel_members seed (new — auto-seeds primary bot into channel)
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
       // welcome message
       .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
       .mockReturnValueOnce(selectSingleChain({ id: OPS_CHANNEL_ID, bot_role_id: OPS_BOT_ID })) // ops channel
@@ -189,5 +191,65 @@ describe('POST /api/workspace/bots (hire)', () => {
     const body = await res.json()
     expect(body.bot.id).toBe(BOT_ID)
     expect(body.channel.id).toBe(CHANNEL_ID)
+  })
+
+  it('seeds channel_members with is_primary: true when bot is hired', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+
+    const newBot = { id: BOT_ID, workspace_id: WORKSPACE_ID, role_key: 'backend', display_name: 'Sam' }
+    const newChannel = { id: CHANNEL_ID, workspace_id: WORKSPACE_ID, name: 'engineering', display_name: 'Engineering', bot_role_id: BOT_ID, position: 1, archived: false, channel_type: 'channel' as const, created_at: '' }
+
+    const selectSingleChain = (data: unknown) => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data }),
+    })
+    const channelPositionChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { position: 0 } }),
+    }
+    const channelMembersInsert = vi.fn().mockResolvedValue({ error: null })
+
+    mockServiceFrom
+      .mockReturnValueOnce(selectSingleChain({ workspace_id: WORKSPACE_ID }))
+      .mockReturnValueOnce(selectSingleChain({ name: 'Acme' }))
+      .mockReturnValueOnce(selectSingleChain(null))
+      .mockReturnValueOnce({
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: newBot, error: null }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce(channelPositionChain)
+      .mockReturnValueOnce({
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: newChannel, error: null }),
+          }),
+        }),
+      })
+      // channel_members — capture the insert call so we can assert its payload
+      .mockReturnValueOnce({ insert: channelMembersInsert })
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) }) // welcome msg
+      .mockReturnValueOnce(selectSingleChain({ id: OPS_CHANNEL_ID, bot_role_id: OPS_BOT_ID }))
+      .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) }) // announcement
+
+    const req = new Request('http://localhost/api/workspace/bots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roleKey: 'backend' }),
+    })
+    const { POST } = await import('@/app/api/workspace/bots/route')
+    await POST(req)
+
+    expect(channelMembersInsert).toHaveBeenCalledWith({
+      channel_id: CHANNEL_ID,
+      bot_role_id: BOT_ID,
+      is_primary: true,
+    })
   })
 })
