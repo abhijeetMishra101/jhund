@@ -387,7 +387,7 @@ export type Database = {
           feature_id: string
           from_stage: number
           to_stage: number
-          gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+          gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff' | 'qa_sign_off'
           actor_role: string | null
           notes: string | null
           created_at: string
@@ -397,7 +397,7 @@ export type Database = {
           feature_id: string
           from_stage: number
           to_stage: number
-          gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+          gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff' | 'qa_sign_off'
           actor_role?: string | null
           notes?: string | null
           created_at?: string
@@ -473,7 +473,7 @@ export interface GateEvent {
   feature_id: string
   from_stage: number
   to_stage: number
-  gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff'
+  gate_type: 'founder_approval' | 'auto_clear' | 'bot_signoff' | 'qa_sign_off'
   actor_role: string | null
   notes: string | null
   created_at: string

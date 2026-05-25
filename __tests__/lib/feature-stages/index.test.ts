@@ -479,3 +479,85 @@ describe('checkGate — error paths', () => {
     expect(result.cleared).toBe(true)
   })
 })
+
+describe('advanceStage — qa_sign_off gate type', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('auto-verifies unverified use cases before gate check when gate_type is qa_sign_off', async () => {
+    mockServiceFrom.mockReset()
+
+    // 1. get current stage
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { stage: 6 }, error: null }),
+    })
+
+    // 1b. qa_sign_off: update feature_use_cases set verified_at
+    const secondIs = vi.fn().mockResolvedValue({ error: null })
+    const firstIs = vi.fn().mockReturnValue({ is: secondIs })
+    const updateEq = vi.fn().mockReturnValue({ is: firstIs })
+    const updateFn = vi.fn().mockReturnValue({ eq: updateEq })
+    mockServiceFrom.mockReturnValueOnce({ update: updateFn })
+
+    // 2. inner checkGate: features status
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { status: 'active', blocking_reason: null, stage: 6 }, error: null }),
+    })
+    // 2. inner checkGate: unverified use cases — now 0 (auto-verified above)
+    const ucSecondIs = vi.fn().mockResolvedValue({ data: [], error: null })
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnValue({ is: ucSecondIs }),
+    })
+    // 3. features update (stage + status=shipped)
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    })
+    // 4. gate_events insert
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
+
+    await expect(advanceStage(FEATURE_ID, 7, 'qa_sign_off', 'qa', 'All use cases verified')).resolves.not.toThrow()
+
+    // Confirm the update was called on feature_use_cases
+    expect(updateFn).toHaveBeenCalledWith({ verified_at: expect.any(String) })
+  })
+
+  it('does NOT auto-verify use cases for other gate types', async () => {
+    mockServiceFrom.mockReset()
+
+    // 1. get current stage
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { stage: 1 }, error: null }),
+    })
+    // NO qa update mock here — if it were called, the test would fail on mock exhaustion
+
+    // 2. inner checkGate: features status
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { status: 'active', blocking_reason: null, stage: 1 }, error: null }),
+    })
+    // 2. inner checkGate: use case count — has some
+    mockServiceFrom.mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ count: 2, error: null }),
+    })
+    // 3. features update
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    })
+    // 4. gate_events insert
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
+
+    // bot_signoff on stage 1→2 should work without touching feature_use_cases
+    await expect(advanceStage(FEATURE_ID, 2, 'bot_signoff', 'backend', 'Build complete')).resolves.not.toThrow()
+  })
+})

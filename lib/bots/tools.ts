@@ -105,7 +105,7 @@ export const ADVANCE_FEATURE_STAGE_TOOL: Anthropic.Tool = {
       },
       gate_type: {
         type: 'string',
-        enum: ['bot_signoff', 'founder_approval', 'auto_clear'],
+        enum: ['bot_signoff', 'founder_approval', 'auto_clear', 'qa_sign_off'],
         description: 'The type of gate being passed',
       },
       notes: {
