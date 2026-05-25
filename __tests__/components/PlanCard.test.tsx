@@ -147,6 +147,22 @@ describe('PlanCard', () => {
       expect(screen.queryByText('Open an issue')).not.toBeInTheDocument()
     )
   })
+
+  it('does not show card when fetch throws a network error', async () => {
+    vi.mocked(global.fetch).mockRejectedValueOnce(new Error('Network failure'))
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    render(<PlanCard planId={PLAN_ID} onAction={vi.fn()} />)
+
+    await waitFor(() =>
+      expect(screen.queryByText('Open an issue')).not.toBeInTheDocument()
+    )
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[PlanCard] fetch error:',
+      expect.any(Error)
+    )
+    consoleSpy.mockRestore()
+  })
 })
 
 // ─── MessageBubble wiring ────────────────────────────────────────────────────
