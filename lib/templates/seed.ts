@@ -70,17 +70,37 @@ export async function seedWorkspace(
   // Build role_key → id map
   const roleMap = Object.fromEntries((roles ?? []).map((r) => [r.role_key, r.id]))
 
-  // Insert template channels
+  // Insert template channels — select back so we get IDs for channel_members
   const channelDefs = TEMPLATE_CHANNELS[template] ?? TEMPLATE_CHANNELS.startup
-  const { error: channelsError } = await supabase.from('channels').insert(
-    channelDefs.map((c, idx) => ({
-      workspace_id: workspaceId,
-      name: c.name,
-      display_name: c.display_name,
-      bot_role_id: roleMap[c.role_key] ?? null,
-      position: idx,
-    }))
-  )
+  const { data: channels, error: channelsError } = await supabase
+    .from('channels')
+    .insert(
+      channelDefs.map((c, idx) => ({
+        workspace_id: workspaceId,
+        name: c.name,
+        display_name: c.display_name,
+        bot_role_id: roleMap[c.role_key] ?? null,
+        position: idx,
+      }))
+    )
+    .select('id, name')
 
-  if (channelsError) throw new Error(`Failed to seed channels: ${channelsError.message}`)
+  if (channelsError || !channels) throw new Error(`Failed to seed channels: ${channelsError?.message}`)
+
+  // Seed channel_members — each channel's primary bot gets is_primary: true
+  const memberRows = channelDefs
+    .map((c, idx) => ({
+      channel_id: channels[idx]?.id,
+      bot_role_id: roleMap[c.role_key],
+      is_primary: true,
+    }))
+    .filter((r) => r.channel_id && r.bot_role_id)
+
+  if (memberRows.length > 0) {
+    const { error: membersError } = await supabase
+      .from('channel_members')
+      .insert(memberRows)
+
+    if (membersError) throw new Error(`Failed to seed channel_members: ${membersError.message}`)
+  }
 }
