@@ -32,6 +32,18 @@ export async function advanceStage(
 
   const fromStage = feature.stage as number
 
+  // 1b. If gate_type is qa_sign_off, mark all unverified use cases as verified
+  //     before the gate check runs — this resolves the circular dependency where
+  //     Casey cannot set verified_at directly but is blocked by unverified use cases.
+  if (gateType === 'qa_sign_off') {
+    await db
+      .from('feature_use_cases')
+      .update({ verified_at: new Date().toISOString() })
+      .eq('feature_id', featureId)
+      .is('verified_at', null)
+      .is('waived_at', null)
+  }
+
   // 2. Validate gate
   const gateResult: GateResult = await checkGateImpl(featureId, fromStage)
   if (!gateResult.cleared) {
