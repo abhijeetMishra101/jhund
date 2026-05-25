@@ -22,7 +22,7 @@ vi.mock('@/lib/github/auth', () => ({
 function makeOctokit({
   defaultBranch = 'main',
   fileExists = false,
-  htmlUrl = 'https://github.com/owner/repo/blob/main/docs/discussions/2026-05-26-rate-limiting-strategy.md',
+  htmlUrl = 'https://github.com/owner/repo/blob/bot/docs-2026-05-26-rate-limiting-strategy/docs/discussions/2026-05-26-rate-limiting-strategy.md',
 }: {
   defaultBranch?: string
   fileExists?: boolean
@@ -36,6 +36,9 @@ function makeOctokit({
     data: { content: { html_url: htmlUrl } },
   })
 
+  const createRef = vi.fn().mockResolvedValue({ data: {} })
+  const getRef = vi.fn().mockResolvedValue({ data: { object: { sha: 'base-sha-123' } } })
+
   return {
     rest: {
       repos: {
@@ -43,9 +46,15 @@ function makeOctokit({
         getContent,
         createOrUpdateFileContents,
       },
+      git: {
+        getRef,
+        createRef,
+      },
     },
     _createOrUpdateFileContents: createOrUpdateFileContents,
     _getContent: getContent,
+    _createRef: createRef,
+    _getRef: getRef,
   }
 }
 
@@ -104,6 +113,9 @@ describe('commitDiscussionDoc', () => {
 
     // Commit message contains the title
     expect(callArg.message).toContain('Rate Limiting Strategy')
+
+    // Must commit to a bot/ branch, NOT main (main is protected)
+    expect(callArg.branch).toMatch(/^bot\/docs-/)
 
     // Correct owner/repo
     expect(callArg.owner).toBe('owner')
