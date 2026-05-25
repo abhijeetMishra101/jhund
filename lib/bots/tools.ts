@@ -119,9 +119,10 @@ export const RECORD_DECISION_TOOL: Anthropic.Tool = {
 export const DOCUMENT_DISCUSSION_TOOL: Anthropic.Tool = {
   name: 'document_discussion',
   description:
-    'Commit a structured Markdown summary of this discussion to the GitHub repo docs folder. ' +
-    'Use this after a substantive discussion to create a persistent record. ' +
-    'The file is committed directly to docs/discussions/ — no approval needed.',
+    'Save a written summary of this discussion for future reference. ' +
+    'Use this after a substantive discussion to create a persistent record — ' +
+    'decisions made, options considered, and next steps. ' +
+    'If the workspace has a connected GitHub repo the summary will be saved there automatically.',
   input_schema: {
     type: 'object' as const,
     properties: {

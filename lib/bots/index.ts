@@ -232,7 +232,7 @@ export async function respondToMessage(
           })
           .catch((err) => console.error('[decisions] postDecisionMessage failed:', err))
 
-        systemContent += ' Action dispatched to #decisions.'
+        systemContent += ' Your team has been asked to act on this in #decisions.'
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
@@ -274,10 +274,10 @@ export async function respondToMessage(
       })
 
       if (result.committed) {
-        systemContent = `✓ Discussion documented at \`${result.path}\``
-        if (result.url) systemContent += ` — [view on GitHub](${result.url})`
+        systemContent = `✓ Discussion saved`
+        if (result.url) systemContent += ` — [View the document](${result.url})`
       } else {
-        systemContent = `Discussion summary stored locally (no GitHub connected): **${input.title}**\n\n${input.summary}`
+        systemContent = `Discussion summary saved (no GitHub connected yet): **${input.title}**\n\n${input.summary}`
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
