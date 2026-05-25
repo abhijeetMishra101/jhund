@@ -11,7 +11,7 @@ import { ThreadPanel } from './components/ThreadPanel'
 import { BotAvatar } from './components/BotAvatar'
 import { PipelinePanel } from './components/PipelinePanel'
 import { PresenceProvider, usePresence } from './components/PresenceContext'
-import Link from 'next/link'
+import { AddBotToChannelButton } from './components/AddBotToChannelButton'
 
 const POLL_INTERVAL_MS = 3000
 
@@ -278,12 +278,19 @@ function WorkspaceShellInner({ workspace, channels: rawChannels, botRoles }: Pro
                   <span className="text-xs text-gray-600">{m.display_name}</span>
                 </div>
               ))}
-              <Link
-                href={`/w/${workspace.slug}/settings`}
-                className="text-xs text-indigo-600 hover:underline ml-1"
-              >
-                + Add teammate
-              </Link>
+              <AddBotToChannelButton
+                channelId={activeChannelId}
+                channelName={activeChannel?.display_name ?? ''}
+                onMemberAdded={(member) => {
+                  setAllChannels((prev) =>
+                    prev.map((ch) =>
+                      ch.id === activeChannelId
+                        ? { ...ch, members: [...ch.members, member] }
+                        : ch
+                    )
+                  )
+                }}
+              />
             </div>
           )}
 
