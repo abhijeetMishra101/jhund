@@ -7,6 +7,7 @@ import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dis
 import { recordDecision } from '@/lib/decisions/record'
 import { postDecisionMessage, markDecisionDispatched } from '@/lib/decisions/dispatch'
 import { commitDiscussionDoc } from '@/lib/decisions/github-commit'
+import { getRoleSystemPrompt } from '@/lib/templates/roles'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
@@ -125,7 +126,21 @@ export async function respondToMessage(
     throw new Error('No messages to respond to')
   }
 
-  // 3. Call Claude with cached system prompt + tools
+  // 3. Fetch workspace name so we can generate the system prompt fresh from code.
+  // We intentionally do NOT use botRole.system_prompt from the DB — prompts are
+  // always derived from the latest roles.ts so every workspace gets improvements
+  // on deploy without re-seeding or migrations.
+  const { data: workspaceRow } = await supabase
+    .from('workspaces')
+    .select('name')
+    .eq('id', workspaceId)
+    .single()
+
+  const systemPromptText = workspaceRow?.name
+    ? getRoleSystemPrompt(botRole.role_key, workspaceRow.name)
+    : botRole.system_prompt // fallback: should never happen in practice
+
+  // 4. Call Claude with cached system prompt + tools
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
@@ -133,14 +148,14 @@ export async function respondToMessage(
     system: [
       {
         type: 'text',
-        text: botRole.system_prompt,
+        text: systemPromptText,
         cache_control: { type: 'ephemeral' },
       },
     ],
     messages: messageHistory,
   })
 
-  // 4a. Check if Claude proposed a GitHub action via tool use
+  // 5. Check if Claude used a tool
   const toolUseBlock = response.content.find((b) => b.type === 'tool_use') as
     | Anthropic.ToolUseBlock
     | undefined

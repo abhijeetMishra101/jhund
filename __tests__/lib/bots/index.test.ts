@@ -66,7 +66,7 @@ const WORKSPACE_ID = 'workspace-uuid'
 const BOT_ROLE = {
   id: 'bot-role-uuid',
   workspace_id: WORKSPACE_ID,
-  role_key: 'engineer',
+  role_key: 'backend',
   display_name: 'Sam',
   system_prompt: 'You are Sam.',
   avatar_seed: 'sam',
@@ -93,9 +93,12 @@ function toolUseResponse(actionType: string, payload: Record<string, unknown>, d
 }
 
 /**
- * Standard bot-resolution mocks for `resolveBotForMessage`:
+ * Standard bot-resolution mocks for `resolveBotForMessage` + workspace name lookup:
  *   1. channel_members: .select().eq().order() → [{ bot_role_id, is_primary }]
  *   2. bot_roles:       .select().in()         → [BOT_ROLE]
+ *   3. workspaces:      .select().eq().single() → { name: 'Test Workspace' }
+ *      (needed because respondToMessage now fetches workspace name to generate
+ *       system prompt fresh from roles.ts instead of using the stale DB value)
  */
 function setupBotResolutionMocks(memberRows = [{ bot_role_id: BOT_ROLE.id, is_primary: true }]) {
   // channel_members chain
@@ -108,6 +111,12 @@ function setupBotResolutionMocks(memberRows = [{ bot_role_id: BOT_ROLE.id, is_pr
   mockServiceFrom.mockReturnValueOnce({
     select: vi.fn().mockReturnThis(),
     in: vi.fn().mockResolvedValue({ data: memberRows.length > 0 ? [BOT_ROLE] : [], error: null }),
+  })
+  // workspaces chain — name used to generate system prompt from roles.ts
+  mockServiceFrom.mockReturnValueOnce({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data: { name: 'Test Workspace' }, error: null }),
   })
 }
 
@@ -135,6 +144,7 @@ function failingInsertChain(errorMsg: string) {
 describe('respondToMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
   })
 
   it('stores a plain-text reply and returns message id', async () => {
@@ -613,6 +623,7 @@ describe('resolveBotForMessage — UC-3-05 @mention routing', () => {
 describe('respondToMessage — advance_feature_stage tool_use', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
     // Default: dispatch finds no targets (fire-and-forget is a no-op)
     mockGetDispatchTargets.mockResolvedValue([])
     mockPostHandoffMessage.mockResolvedValue('handoff-msg-id')
@@ -786,6 +797,7 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
 describe('respondToMessage — create_feature tool_use', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
     mockGetDispatchTargets.mockResolvedValue([])
     mockPostHandoffMessage.mockResolvedValue('handoff-msg-id')
   })
@@ -907,6 +919,7 @@ describe('respondToMessage — create_feature tool_use', () => {
 describe('respondToMessage — record_decision tool_use', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
     mockPostDecisionMessage.mockResolvedValue(null)
     mockMarkDecisionDispatched.mockResolvedValue(undefined)
   })
@@ -1119,6 +1132,7 @@ describe('respondToMessage — record_decision tool_use', () => {
 describe('respondToMessage — document_discussion tool_use', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
   })
 
   function documentDiscussionToolResponse(input: { title: string; summary: string }) {
