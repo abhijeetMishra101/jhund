@@ -3,17 +3,45 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getInstallationOctokit } from '@/lib/github/auth'
 
 /** Parse a GitHub blob URL into its components.
- *  Expected format: https://github.com/{owner}/{repo}/blob/{branch}/{path}
+ *  Handles branch names that contain slashes (e.g. bot/docs-2026-05-26-slug).
+ *
+ *  Strategy: find the first occurrence of 'docs/discussions/' in the remainder
+ *  after /blob/ — everything before it is the branch, everything from it is
+ *  the file path. Falls back to treating the first segment as a single-level
+ *  branch for any URL that doesn't match our discussion-file pattern.
+ *
+ *  Examples:
+ *    …/blob/main/docs/discussions/foo.md         → branch=main, path=docs/discussions/foo.md
+ *    …/blob/bot/docs-2026-05-26-x/docs/discussions/foo.md → branch=bot/docs-2026-05-26-x, path=docs/discussions/foo.md
  */
 function parseGithubBlobUrl(url: string): { owner: string; repo: string; branch: string; path: string } | null {
   try {
     const parsed = new URL(url)
     if (parsed.hostname !== 'github.com') return null
-    // pathname: /{owner}/{repo}/blob/{branch}/{...path}
+    // pathname: /{owner}/{repo}/blob/{...branchAndPath}
     const parts = parsed.pathname.split('/').filter(Boolean)
     if (parts.length < 5 || parts[2] !== 'blob') return null
-    const [owner, repo, , branch, ...pathParts] = parts
-    if (!owner || !repo || !branch || pathParts.length === 0) return null
+    const owner = parts[0]
+    const repo = parts[1]
+    if (!owner || !repo) return null
+
+    // Everything after /blob/ joined back together
+    const afterBlob = parts.slice(3).join('/')
+
+    // Anchor on 'docs/discussions/' to split branch from path unambiguously.
+    // This works whether the branch is 'main' or a multi-level 'bot/docs-*' name.
+    const anchor = 'docs/discussions/'
+    const anchorIdx = afterBlob.indexOf(anchor)
+    if (anchorIdx > 0) {
+      const branch = afterBlob.slice(0, anchorIdx - 1) // strip trailing /
+      const path = afterBlob.slice(anchorIdx)
+      if (!branch || !path) return null
+      return { owner, repo, branch, path }
+    }
+
+    // Fallback: single-level branch (e.g. 'main') with a non-standard path
+    const [branch, ...pathParts] = parts.slice(3)
+    if (!branch || pathParts.length === 0) return null
     return { owner, repo, branch, path: pathParts.join('/') }
   } catch {
     return null
