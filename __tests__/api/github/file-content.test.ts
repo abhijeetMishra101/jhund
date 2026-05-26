@@ -122,6 +122,27 @@ describe('GET /api/github/file-content', () => {
     expect(body.content).toBe('# Hello\n\nThis is the document.')
   })
 
+  it('correctly parses branch names with slashes (bot/docs-* branches)', async () => {
+    // URL shape produced by document_discussion: bot/docs-{date}-{slug} branch
+    const botBranchUrl = 'https://github.com/acme/myrepo/blob/bot/docs-2026-05-26-rate-limiting/docs/discussions/2026-05-26-rate-limiting.md'
+    stubHappyPath('# Rate Limiting\n\nToken bucket approach.')
+    const { GET } = await import('@/app/api/github/file-content/route')
+    const res = await GET(makeRequest(botBranchUrl) as never)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.content).toBe('# Rate Limiting\n\nToken bucket approach.')
+
+    // Verify Octokit was called with the correct branch and path (not just 'bot')
+    expect(mockGetContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ref: 'bot/docs-2026-05-26-rate-limiting',
+        path: 'docs/discussions/2026-05-26-rate-limiting.md',
+        owner: 'acme',
+        repo: 'myrepo',
+      })
+    )
+  })
+
   it('returns 404 when the file is not found on GitHub', async () => {
     mockGetUser.mockResolvedValue({ data: { user: USER } })
 
