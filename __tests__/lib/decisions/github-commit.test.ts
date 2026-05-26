@@ -136,6 +136,23 @@ describe('commitDiscussionDoc', () => {
     expect(callArg.sha).toBe('abc123')
   })
 
+  it('UC-19-04c: swallows 422 from createRef when bot/docs-* branch already exists', async () => {
+    const octokit = makeOctokit()
+    // createRef returns 422 (branch already exists) — should not throw
+    octokit._createRef.mockRejectedValue(Object.assign(new Error('Reference already exists'), { status: 422 }))
+    mockGetInstallationOctokit.mockResolvedValue(octokit)
+    mockFrom.mockReturnValueOnce(
+      installationChain({ installation_id: 42, repo_full_name: 'owner/repo' })
+    )
+
+    const { commitDiscussionDoc } = await import('@/lib/decisions/github-commit')
+    const result = await commitDiscussionDoc(PARAMS)
+
+    // Should still succeed — branch already existing is fine
+    expect(result.committed).toBe(true)
+    expect(octokit._createOrUpdateFileContents).toHaveBeenCalledOnce()
+  })
+
   it('UC-19-05: no installation row → returns committed:false without calling Octokit', async () => {
     mockFrom.mockReturnValueOnce(installationChain(null, true))
 
