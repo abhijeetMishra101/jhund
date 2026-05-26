@@ -5,7 +5,7 @@ import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_
 import { advanceStage } from '@/lib/feature-stages'
 import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dispatch'
 import { recordDecision } from '@/lib/decisions/record'
-import { postDecisionMessage, markDecisionDispatched } from '@/lib/decisions/dispatch'
+import { postDecisionMessage, markDecisionDispatched, postDecisionSummary } from '@/lib/decisions/dispatch'
 import { commitDiscussionDoc } from '@/lib/decisions/github-commit'
 import { getRoleSystemPrompt } from '@/lib/templates/roles'
 import type { BotRole } from '@/lib/supabase/types'
@@ -233,7 +233,11 @@ export async function respondToMessage(
 
       systemContent = `✓ Decision recorded: ${input.title}`
 
-      // If an action was specified, dispatch it to #decisions (fire-and-forget)
+      // Always post a summary to #decisions so the channel captures every decision (fire-and-forget)
+      postDecisionSummary(workspaceId, channelId, input.title, input.summary, botRole.id)
+        .catch((err) => console.error('[decisions] postDecisionSummary failed:', err))
+
+      // If an action was specified, additionally dispatch it to #decisions
       if (input.action) {
         postDecisionMessage(workspaceId, input.action, botRole.id)
           .then(async (result) => {

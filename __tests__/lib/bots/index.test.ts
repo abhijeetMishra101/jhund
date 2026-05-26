@@ -10,6 +10,7 @@ const mockPostHandoffMessage = vi.hoisted(() => vi.fn())
 const mockRecordDecision = vi.hoisted(() => vi.fn())
 const mockPostDecisionMessage = vi.hoisted(() => vi.fn())
 const mockMarkDecisionDispatched = vi.hoisted(() => vi.fn())
+const mockPostDecisionSummary = vi.hoisted(() => vi.fn())
 const mockCommitDiscussionDoc = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
@@ -46,6 +47,7 @@ vi.mock('@/lib/decisions/record', () => ({
 
 vi.mock('@/lib/decisions/dispatch', () => ({
   postDecisionMessage: mockPostDecisionMessage,
+  postDecisionSummary: mockPostDecisionSummary,
   markDecisionDispatched: mockMarkDecisionDispatched,
 }))
 
@@ -921,6 +923,7 @@ describe('respondToMessage — record_decision tool_use', () => {
     vi.clearAllMocks()
     mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
     mockPostDecisionMessage.mockResolvedValue(null)
+    mockPostDecisionSummary.mockResolvedValue(undefined)
     mockMarkDecisionDispatched.mockResolvedValue(undefined)
   })
 

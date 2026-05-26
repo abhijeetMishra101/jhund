@@ -70,6 +70,48 @@ export async function postDecisionMessage(
 }
 
 /**
+ * Posts a plain summary of any decision (with or without action) to #decisions
+ * so the channel always reflects every recorded decision, not just actioned ones.
+ *
+ * Returns null if no #decisions channel exists.
+ */
+export async function postDecisionSummary(
+  workspaceId: string,
+  sourceChannelId: string,
+  title: string,
+  summary: string,
+  decidingBotRoleId: string
+): Promise<void> {
+  const supabase = createServiceClient()
+
+  const { data: decisionsChannel } = await supabase
+    .from('channels')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .eq('name', 'decisions')
+    .single()
+
+  if (!decisionsChannel) return
+
+  // Look up source channel name so we can show "from #product" etc.
+  const { data: sourceChannel } = await supabase
+    .from('channels')
+    .select('name')
+    .eq('id', sourceChannelId)
+    .single()
+
+  const source = sourceChannel?.name ? ` (from #${sourceChannel.name})` : ''
+  const content = `📋 **${title}**${source}\n\n${summary}`
+
+  await supabase.from('messages').insert({
+    channel_id: decisionsChannel.id,
+    author_type: 'bot' as const,
+    author_id: decidingBotRoleId,
+    content,
+  })
+}
+
+/**
  * Updates the action_dispatched_at timestamp on a decision_events row.
  */
 export async function markDecisionDispatched(decisionId: string): Promise<void> {

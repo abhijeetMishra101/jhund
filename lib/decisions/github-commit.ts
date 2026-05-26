@@ -1,8 +1,9 @@
 /**
- * Commits a discussion summary Markdown file directly to the GitHub repo's
- * docs/discussions/ folder on the default branch.
+ * Commits a discussion summary Markdown file to the GitHub repo under
+ * docs/discussions/ on a dedicated bot/docs-{slug} branch (not main).
  *
- * Does NOT go through the plan approval modal — this is a direct commit.
+ * Committing to main is blocked by branch protection — we use a bot/ branch
+ * so the file lands in GitHub without needing CI approval.
  * If no GitHub installation is connected, returns { committed: false }.
  */
 import { createServiceClient } from '@/lib/supabase/server'
@@ -63,9 +64,16 @@ export async function commitDiscussionDoc(
   const octokit = await getInstallationOctokit(Number(installation.installation_id))
   const [owner, repo] = installation.repo_full_name.split('/')
 
-  // Get the repo's default branch
+  // Get the repo's default branch SHA to base the bot branch on
   const { data: repoData } = await octokit.rest.repos.get({ owner, repo })
   const defaultBranch = repoData.default_branch
+
+  const { data: refData } = await octokit.rest.git.getRef({
+    owner,
+    repo,
+    ref: `heads/${defaultBranch}`,
+  })
+  const baseSha = refData.object.sha
 
   const dateStr = todayDateString()
   const slug = slugify(params.title)
@@ -73,20 +81,36 @@ export async function commitDiscussionDoc(
   const fileContent = `# ${params.title}\n\n${params.summary}\n`
   const commitMessage = `docs: add discussion summary — ${params.title}`
 
-  // Check if the file already exists (for idempotency — get SHA if it does)
+  // Use a bot/ branch — main is protected and blocks direct commits
+  const branchName = `bot/docs-${dateStr}-${slug}`.slice(0, 100)
+
+  // Create the branch (idempotent — ignore 422 if it already exists)
+  try {
+    await octokit.rest.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branchName}`,
+      sha: baseSha,
+    })
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status
+    if (status !== 422) throw err // 422 = branch already exists, that's fine
+  }
+
+  // Check if the file already exists on this branch (idempotency)
   let existingSha: string | undefined
   try {
     const { data: existing } = await octokit.rest.repos.getContent({
       owner,
       repo,
       path: filePath,
-      ref: defaultBranch,
+      ref: branchName,
     })
     if (!Array.isArray(existing) && existing.type === 'file') {
       existingSha = existing.sha
     }
   } catch {
-    // File doesn't exist yet — that's the expected case
+    // File doesn't exist yet — expected
   }
 
   const { data: commitData } = await octokit.rest.repos.createOrUpdateFileContents({
@@ -95,7 +119,7 @@ export async function commitDiscussionDoc(
     path: filePath,
     message: commitMessage,
     content: Buffer.from(fileContent).toString('base64'),
-    branch: defaultBranch,
+    branch: branchName,
     ...(existingSha ? { sha: existingSha } : {}),
   })
 
