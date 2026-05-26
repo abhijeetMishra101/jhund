@@ -176,3 +176,197 @@ describe('MessageBubble — timestamp hover', () => {
     expect(ts.textContent).toContain('at')
   })
 })
+
+describe('MessageBubble — markdown rendering', () => {
+  it('renders a plain-text message without error', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: 'Hello founder' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('message-msg-1')).toHaveTextContent('Hello founder')
+  })
+
+  it('renders bold text from markdown', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: 'This is **bold** text' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    const strong = screen.getByTestId('message-msg-1').querySelector('strong')
+    expect(strong).toBeInTheDocument()
+    expect(strong).toHaveTextContent('bold')
+  })
+
+  it('renders a regular external link as an anchor with target=_blank', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '[Click me](https://example.com)' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    const link = screen.getByRole('link', { name: /click me/i })
+    expect(link).toHaveAttribute('href', 'https://example.com')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('renders a GitHub blob URL as a button that opens the drawer', async () => {
+    const GITHUB_URL = 'https://github.com/acme/repo/blob/main/docs/discussion.md'
+    // Drawer fetch never resolves to keep loading state
+    global.fetch = vi.fn().mockReturnValue(new Promise(() => {}))
+
+    render(
+      <MessageBubble
+        message={baseMsg({ content: `[View the document](${GITHUB_URL})` })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+
+    const btn = screen.getByTestId('github-doc-link')
+    expect(btn).toBeInTheDocument()
+    expect(btn.tagName).toBe('BUTTON')
+    expect(btn).toHaveTextContent('View the document')
+
+    // Clicking it should open the drawer
+    fireEvent.click(btn)
+    await waitFor(() => {
+      expect(screen.getByTestId('document-viewer-drawer')).toBeInTheDocument()
+    })
+  })
+
+  it('closes the drawer when onClose is called', async () => {
+    const GITHUB_URL = 'https://github.com/acme/repo/blob/main/docs/discussion.md'
+    global.fetch = vi.fn().mockReturnValue(new Promise(() => {}))
+
+    render(
+      <MessageBubble
+        message={baseMsg({ content: `[View the document](${GITHUB_URL})` })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId('github-doc-link'))
+    await waitFor(() => {
+      expect(screen.getByTestId('document-viewer-drawer')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('drawer-close'))
+    expect(screen.queryByTestId('document-viewer-drawer')).not.toBeInTheDocument()
+  })
+
+  it('renders heading markdown as bold (not an h1)', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '# Title Here' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    // Heading should be rendered as <strong>, not as an h1
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    const strong = screen.getByTestId('message-msg-1').querySelector('strong')
+    expect(strong).toBeInTheDocument()
+  })
+
+  it('renders h2 heading as bold', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '## Section Two' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    expect(screen.getByTestId('message-msg-1').querySelector('strong')).toBeInTheDocument()
+  })
+
+  it('renders h3 heading as bold', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '### Section Three' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('message-msg-1').querySelector('strong')).toBeInTheDocument()
+  })
+
+  it('renders h4 heading as bold', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '#### Four' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('message-msg-1').querySelector('strong')).toBeInTheDocument()
+  })
+
+  it('renders h5 heading as bold', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '##### Five' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('message-msg-1').querySelector('strong')).toBeInTheDocument()
+  })
+
+  it('renders h6 heading as bold', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '###### Six' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('message-msg-1').querySelector('strong')).toBeInTheDocument()
+  })
+
+  it('renders unordered list items inline without <ul>', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '- item one\n- item two' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    const bubble = screen.getByTestId('message-msg-1')
+    expect(bubble.querySelector('ul')).not.toBeInTheDocument()
+    expect(bubble).toHaveTextContent('item one')
+    expect(bubble).toHaveTextContent('item two')
+  })
+
+  it('renders ordered list items inline without <ol>', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '1. first\n2. second' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    const bubble = screen.getByTestId('message-msg-1')
+    expect(bubble.querySelector('ol')).not.toBeInTheDocument()
+    expect(bubble).toHaveTextContent('first')
+  })
+
+  it('renders inline code / pre block', () => {
+    render(
+      <MessageBubble
+        message={baseMsg({ content: '```\nconst x = 1\n```' })}
+        botRole={BOT_ROLE}
+        onPlanAction={vi.fn()}
+      />
+    )
+    // The pre element should exist (our custom renderer)
+    expect(screen.getByTestId('message-msg-1').querySelector('pre')).toBeInTheDocument()
+  })
+})
