@@ -32,7 +32,7 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { data: messages, error } = await serviceClient
     .from('messages')
-    .select('id, author_type, author_id, content, plan_id, created_at, reply_count, parent_id')
+    .select('id, channel_id, author_type, author_id, content, plan_id, created_at, reply_count, parent_id')
     .eq('channel_id', params.channelId)
     .is('parent_id', null)
     .order('created_at', { ascending: true })
