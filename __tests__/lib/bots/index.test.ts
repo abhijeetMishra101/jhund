@@ -12,6 +12,7 @@ const mockPostDecisionMessage = vi.hoisted(() => vi.fn())
 const mockMarkDecisionDispatched = vi.hoisted(() => vi.fn())
 const mockPostDecisionSummary = vi.hoisted(() => vi.fn())
 const mockCommitDiscussionDoc = vi.hoisted(() => vi.fn())
+const mockUndoDecision = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -53,6 +54,10 @@ vi.mock('@/lib/decisions/dispatch', () => ({
 
 vi.mock('@/lib/decisions/github-commit', () => ({
   commitDiscussionDoc: mockCommitDiscussionDoc,
+}))
+
+vi.mock('@/lib/decisions/undo', () => ({
+  undoDecision: mockUndoDecision,
 }))
 
 // Mock context so we don't have to wire up the full message-history chain
@@ -1242,6 +1247,131 @@ describe('respondToMessage — document_discussion tool_use', () => {
     mockMessagesCreate.mockResolvedValue(
       documentDiscussionToolResponse({ title: 'Auth Discussion', summary: 'Summary.' })
     )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
+  })
+})
+
+// ── undo_decision tool handler ────────────────────────────────────────────────
+describe('respondToMessage — undo_decision tool_use', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset() // flush any unconsumed mockReturnValueOnce entries
+  })
+
+  function undoDecisionToolResponse() {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-undo-decision',
+          name: 'undo_decision',
+          input: {},
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  it('UC-19-13: clean undo — system message contains "quietly removed"', async () => {
+    setupBotResolutionMocks()
+    mockUndoDecision.mockResolvedValue({
+      undone: true,
+      title: 'Use PostgreSQL',
+      actionWasDispatched: false,
+    })
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-undo-clean' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(undoDecisionToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-undo-clean')
+    expect(mockUndoDecision).toHaveBeenCalledWith(WORKSPACE_ID, CHANNEL_ID, BOT_ROLE.id)
+
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('quietly removed')
+  })
+
+  it('UC-19-14: dispatched undo — system message contains "team already saw this"', async () => {
+    setupBotResolutionMocks()
+    mockUndoDecision.mockResolvedValue({
+      undone: true,
+      title: 'Use PostgreSQL',
+      actionWasDispatched: true,
+    })
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-undo-dispatched' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(undoDecisionToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-undo-dispatched')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('team already saw this')
+  })
+
+  it('UC-19-15: nothing to undo — system message contains "don\'t see a recent decision"', async () => {
+    setupBotResolutionMocks()
+    mockUndoDecision.mockResolvedValue({ undone: false })
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-undo-nothing' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(undoDecisionToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-undo-nothing')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain("don't see a recent decision")
+  })
+
+  it('DB error: undoDecision throws — fallback error message contains "Failed to undo decision"', async () => {
+    setupBotResolutionMocks()
+    mockUndoDecision.mockRejectedValue(new Error('connection timeout'))
+
+    const msgInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'sys-undo-err' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: msgInsert })
+
+    mockMessagesCreate.mockResolvedValue(undoDecisionToolResponse())
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('sys-undo-err')
+    const content = (msgInsert.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(content).toContain('Failed to undo decision')
+    expect(content).toContain('connection timeout')
+  })
+
+  it('insert fails — throws "Failed to store system message"', async () => {
+    setupBotResolutionMocks()
+    mockUndoDecision.mockResolvedValue({ undone: false })
+
+    mockServiceFrom.mockReturnValueOnce(failingInsertChain('db write failed'))
+
+    mockMessagesCreate.mockResolvedValue(undoDecisionToolResponse())
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
