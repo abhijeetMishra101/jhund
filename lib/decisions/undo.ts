@@ -42,8 +42,7 @@ export async function undoDecision(
   //    and the generated Supabase types predate it.
   await supabase
     .from('decision_events')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .update({ deleted_at: new Date().toISOString() } as any)
+    .update({ deleted_at: new Date().toISOString() } as never)
     .eq('id', decision.id)
 
   // 3. Post withdrawn notice to #decisions (fire-and-forget)
