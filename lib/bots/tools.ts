@@ -139,6 +139,21 @@ export const DOCUMENT_DISCUSSION_TOOL: Anthropic.Tool = {
   },
 }
 
+/** Retracts the most recent decision recorded in the current channel. */
+export const UNDO_DECISION_TOOL: Anthropic.Tool = {
+  name: 'undo_decision',
+  description:
+    'Retract the most recent decision you recorded in this channel. ' +
+    "Use this when the founder says \"undo that decision\", \"that wasn't a decision\", " +
+    '"delete that", or similar explicit retraction request. ' +
+    'Do NOT use this unless the founder explicitly asks to undo.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {},
+    required: [],
+  },
+}
+
 /** Signals that a feature is ready to move to the next pipeline stage. */
 export const ADVANCE_FEATURE_STAGE_TOOL: Anthropic.Tool = {
   name: 'advance_feature_stage',
