@@ -45,17 +45,43 @@ function isOlderThanToday(iso: string): boolean {
 
 const GITHUB_BLOB_RE = /^https:\/\/github\.com\/.+\/blob\/.+/
 
+const DECISION_PREFIX = '✓ Decision recorded:'
+
 export function MessageBubble({ message, botRole, onPlanAction, onOpenThread }: Props) {
   const [showFullTime, setShowFullTime] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerUrl, setDrawerUrl] = useState('')
+  const [undoState, setUndoState] = useState<'idle' | 'loading' | 'done'>('idle')
   const isUser = message.author_type === 'user'
   const isSystem = message.author_type === 'system'
 
   if (isSystem) {
+    const isDecision = message.content.startsWith(DECISION_PREFIX)
     return (
-      <div className="text-xs text-center text-gray-500 py-1 my-1" data-testid="system-message">
-        {message.content}
+      <div className="text-xs text-center text-gray-500 py-1 my-1 flex items-center justify-center gap-2" data-testid="system-message">
+        <span>{message.content}</span>
+        {isDecision && undoState === 'idle' && (
+          <button
+            type="button"
+            onClick={async () => {
+              setUndoState('loading')
+              try {
+                const res = await fetch(`/api/channels/${message.channel_id}/undo-decision`, { method: 'POST' })
+                if (res.ok) setUndoState('done')
+                else setUndoState('idle')
+              } catch {
+                setUndoState('idle')
+              }
+            }}
+            className="text-gray-400 hover:text-red-500 underline transition-colors"
+            data-testid="undo-decision-btn"
+          >
+            Undo
+          </button>
+        )}
+        {isDecision && undoState === 'loading' && (
+          <span className="text-gray-300">Undoing…</span>
+        )}
       </div>
     )
   }

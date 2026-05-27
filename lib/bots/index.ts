@@ -1,17 +1,18 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
-import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL } from './tools'
+import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
 import { advanceStage } from '@/lib/feature-stages'
 import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dispatch'
 import { recordDecision } from '@/lib/decisions/record'
 import { postDecisionMessage, markDecisionDispatched, postDecisionSummary } from '@/lib/decisions/dispatch'
 import { commitDiscussionDoc } from '@/lib/decisions/github-commit'
+import { undoDecision } from '@/lib/decisions/undo'
 import { getRoleSystemPrompt } from '@/lib/templates/roles'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
-export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL } from './tools'
+export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -144,7 +145,7 @@ export async function respondToMessage(
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL],
+    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL],
     system: [
       {
         type: 'text',
@@ -322,7 +323,48 @@ export async function respondToMessage(
     return stored.id
   }
 
-  // 4a-iv. Handle advance_feature_stage tool
+  // 4a-iv. Handle undo_decision tool
+  if (toolUseBlock?.name === 'undo_decision') {
+    let systemContent: string
+    try {
+      const result = await undoDecision(workspaceId, channelId, botRole.id)
+
+      if (!result.undone) {
+        // UC-19-15: nothing to undo
+        systemContent = "I don't see a recent decision here to undo. Which one did you mean?"
+      } else if (result.actionWasDispatched) {
+        // UC-19-14: team was already notified — warn the founder
+        systemContent =
+          `Removed. Worth noting — the team already saw this. You may want to give them a heads-up.`
+      } else {
+        // UC-19-13: clean undo
+        systemContent = `Done — I've quietly removed that from the record. It's like it never happened.`
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      systemContent = `Failed to undo decision: ${message}`
+    }
+
+    const { data: stored, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: botRole.id,
+        content: systemContent,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !stored) {
+      throw new Error(`Failed to store system message: ${insertError?.message ?? 'no data'}`)
+    }
+
+    return stored.id
+  }
+
+  // 4a-v. Handle advance_feature_stage tool
   if (toolUseBlock?.name === 'advance_feature_stage') {
     const input = toolUseBlock.input as {
       feature_id: string
