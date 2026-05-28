@@ -127,9 +127,31 @@ export async function POST(request: Request) {
   // Keep the serverless function alive until the bot responds (Vercel kills
   // execution as soon as the response is sent without waitUntil).
   // Pass content so @mention routing (resolveBotForMessage) can pick the right bot.
+  const workspaceId = userRow.workspace_id
   waitUntil(
-    respondToMessage(channelId, userRow.workspace_id, parent_id, content.trim()).catch((err: unknown) => {
+    respondToMessage(channelId, workspaceId, parent_id, content.trim()).catch(async (err: unknown) => {
       console.error('[bot] respondToMessage failed:', err)
+      // Surface the error in the channel so the founder isn't left with silence.
+      try {
+        const svc = createServiceClient()
+        // Find the primary bot for this channel to use as author (best-effort)
+        const { data: memberRow } = await svc
+          .from('channel_members')
+          .select('bot_role_id')
+          .eq('channel_id', channelId)
+          .eq('is_primary', true)
+          .single()
+        const authorId = memberRow?.bot_role_id ?? user.id
+        await svc.from('messages').insert({
+          channel_id: channelId,
+          author_type: 'system',
+          author_id: authorId,
+          content: "Something went wrong on my end. Try sending your message again.",
+          ...(parent_id ? { parent_id } : {}),
+        })
+      } catch (surfaceErr) {
+        console.error('[bot] failed to surface error to channel:', surfaceErr)
+      }
     })
   )
 
