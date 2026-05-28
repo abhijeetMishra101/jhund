@@ -158,4 +158,22 @@ describe('readGithubFile', () => {
       expect.objectContaining({ ref: 'feat/my-branch' })
     )
   })
+
+  it('rethrows unexpected errors from getContent (not 404/403)', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    const networkErr = Object.assign(new Error('Network timeout'), { status: 503 })
+    mockReposGetContent.mockRejectedValueOnce(networkErr)
+
+    const { readGithubFile } = await import('@/lib/github/reader')
+    await expect(readGithubFile(WORKSPACE_ID, 'src/app.ts')).rejects.toThrow('Network timeout')
+  })
+
+  it('throws FileNotFoundError when path resolves to a directory', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    // GitHub returns an array when the path is a directory
+    mockReposGetContent.mockResolvedValueOnce({ data: [{ name: 'file.py', type: 'file' }] })
+
+    const { readGithubFile, FileNotFoundError } = await import('@/lib/github/reader')
+    await expect(readGithubFile(WORKSPACE_ID, 'src/')).rejects.toThrow(FileNotFoundError)
+  })
 })
