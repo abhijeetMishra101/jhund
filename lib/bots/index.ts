@@ -211,6 +211,18 @@ export async function respondToMessage(
     | Anthropic.ToolUseBlock
     | undefined
 
+  // Guard: if we exhausted MAX_READ_ITERATIONS and Claude still wants to read, surface a friendly message.
+  if (toolUseBlock?.name === 'read_github_file') {
+    const { data: stored } = await supabase.from('messages').insert({
+      channel_id: channelId,
+      author_type: 'system',
+      author_id: botRole.id,
+      content: "I ran into trouble reading the repo files. Try again or check your GitHub connection.",
+      ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+    }).select('id').single()
+    return stored?.id ?? 'cap-hit'
+  }
+
   // 4a-i. Handle create_feature tool
   if (toolUseBlock?.name === 'create_feature') {
     const input = toolUseBlock.input as {
