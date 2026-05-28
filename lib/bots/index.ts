@@ -166,38 +166,49 @@ export async function respondToMessage(
   })
 
   // Read loop — intercept read_github_file tool calls and resolve them immediately.
-  // Runs up to MAX_READ_ITERATIONS times; breaks when Claude calls a different tool or returns text.
+  // Claude may call multiple read_github_file tools in parallel in a single response.
+  // We must provide tool_result blocks for EVERY tool_use in the response — missing
+  // any one causes a 400 "tool_use ids without tool_result blocks" error from the API.
+  // Runs up to MAX_READ_ITERATIONS times; breaks when there are no read_github_file
+  // calls in the response (Claude called another tool or returned text).
   for (let iteration = 0; iteration < MAX_READ_ITERATIONS; iteration++) {
-    const readBlock = response.content.find(
+    // Collect ALL read_github_file tool_use blocks from this response (parallel reads)
+    const readBlocks = response.content.filter(
       (b) => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'read_github_file'
-    ) as Anthropic.ToolUseBlock | undefined
+    ) as Anthropic.ToolUseBlock[]
 
-    if (!readBlock) break // Claude called another tool or returned text — hand off to existing handlers
+    if (readBlocks.length === 0) break // Claude called another tool or returned text — hand off
 
-    const input = readBlock.input as { path: string; branch?: string }
-
-    let toolResultContent: string
-    try {
-      const result = await readGithubFile(workspaceId, input.path, input.branch)
-      toolResultContent = result.content
-    } catch (err) {
-      if (err instanceof FileNotFoundError) {
-        toolResultContent = `File not found: ${input.path}`
-      } else if (err instanceof FileAccessDeniedError) {
-        toolResultContent = `Access denied: ${input.path}`
-      } else {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        toolResultContent = `Error reading ${input.path}: ${message}`
-      }
-    }
-
-    // Append the assistant's tool_use turn and our tool_result response
-    messages.push(
-      { role: 'assistant' as const, content: response.content },
-      { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: readBlock.id, content: toolResultContent }] }
+    // Resolve all file reads in parallel, one tool_result per tool_use block
+    const toolResults = await Promise.all(
+      readBlocks.map(async (readBlock) => {
+        const input = readBlock.input as { path: string; branch?: string }
+        let content: string
+        try {
+          const result = await readGithubFile(workspaceId, input.path, input.branch)
+          content = result.content
+        } catch (err) {
+          if (err instanceof FileNotFoundError) {
+            content = `File not found: ${input.path}`
+          } else if (err instanceof FileAccessDeniedError) {
+            content = `Access denied: ${input.path}`
+          } else {
+            const message = err instanceof Error ? err.message : 'Unknown error'
+            content = `Error reading ${input.path}: ${message}`
+          }
+        }
+        return { type: 'tool_result' as const, tool_use_id: readBlock.id, content }
+      })
     )
 
-    // Call Claude again with the file content in context
+    // Append the assistant's full turn (all tool_use blocks) + results for every block.
+    // The API requires a 1-to-1 correspondence between tool_use and tool_result.
+    messages.push(
+      { role: 'assistant' as const, content: response.content },
+      { role: 'user' as const, content: toolResults }
+    )
+
+    // Call Claude again with all file contents in context
     response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,

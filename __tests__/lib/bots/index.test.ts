@@ -1502,6 +1502,48 @@ describe('respondToMessage — read_github_file tool_use', () => {
     expect(toolResultMsg).toBeDefined()
   })
 
+  it('parallel reads — Claude returns multiple read_github_file in one response, all resolved before next call', async () => {
+    // This is the exact scenario that caused the 400 "tool_use ids without tool_result" error.
+    // Claude can call several read_github_file tools in parallel (one response, multiple tool_use blocks).
+    // The loop must provide a tool_result for EVERY tool_use block, not just the first.
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-parallel-reads'))
+
+    mockReadGithubFile
+      .mockResolvedValueOnce({ content: '// auth.tsx', sha: 'sha-a', truncated: false })
+      .mockResolvedValueOnce({ content: '// pages/auth.tsx', sha: 'sha-b', truncated: false })
+
+    mockMessagesCreate
+      // First call: Claude returns TWO read_github_file tool_uses in one response
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'tool_use', id: 'tool-parallel-a', name: 'read_github_file', input: { path: 'app/auth.tsx' } },
+          { type: 'tool_use', id: 'tool-parallel-b', name: 'read_github_file', input: { path: 'pages/auth.tsx' } },
+        ],
+        stop_reason: 'tool_use',
+      })
+      // Second call: Claude responds with text after seeing both file contents
+      .mockResolvedValueOnce(textResponse('Neither path exists in your repo.'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-parallel-reads')
+    expect(mockReadGithubFile).toHaveBeenCalledTimes(2)
+    // Only 2 Claude calls (not 3) because both reads were resolved in one iteration
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+
+    // The second call must contain tool_result blocks for BOTH tool_use ids
+    const secondCallMessages = mockMessagesCreate.mock.calls[1][0].messages as unknown[]
+    const toolResultMsg = secondCallMessages.find(
+      (m) =>
+        (m as { role: string }).role === 'user' &&
+        Array.isArray((m as { content: unknown[] }).content) &&
+        (m as { content: unknown[] }).content.length === 2 // two results
+    )
+    expect(toolResultMsg).toBeDefined()
+  })
+
   it('after read loop exits on non-read tool_use, existing propose_github_action handler runs', async () => {
     setupBotResolutionMocks()
 
