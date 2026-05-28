@@ -126,8 +126,27 @@ describe('POST /api/messages', () => {
     expect(res.status).toBe(404)
   })
 
-  it('returns 201 when respondToMessage throws a generic error (error silently swallowed)', async () => {
+  it('returns 201 when respondToMessage throws — posts system error message to channel', async () => {
     setupAuthMocks()
+    // Extra mocks needed for the error-surfacing path (channel_members + messages insert)
+    mockServiceFrom
+      .mockReturnValueOnce({ // channel_members query
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { bot_role_id: 'bot-uuid' }, error: null }),
+      })
+      .mockReturnValueOnce({ // system message insert
+        insert: vi.fn().mockResolvedValue({ error: null }),
+      })
+    const { respondToMessage } = await import('@/lib/bots')
+    vi.mocked(respondToMessage).mockRejectedValueOnce(new Error('unexpected failure'))
+    const res = await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
+    expect(res.status).toBe(201)
+  })
+
+  it('returns 201 when respondToMessage throws and error surfacing also fails (double-fault)', async () => {
+    setupAuthMocks()
+    // No extra mocks — error surfacing fails gracefully (caught internally)
     const { respondToMessage } = await import('@/lib/bots')
     vi.mocked(respondToMessage).mockRejectedValueOnce(new Error('unexpected failure'))
     const res = await POST(makeReq({ channelId: CHANNEL_ID, content: 'hello' }))
