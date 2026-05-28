@@ -121,8 +121,9 @@ export async function respondToMessage(
   const botRole = await resolveBotForMessage(channelId, messageContent)
   if (!botRole) throw new Error(`No bot configured for channel ${channelId}`)
 
-  // 2. Build conversation history
-  const messageHistory = await buildMessageHistory(channelId, 20)
+  // 2. Build conversation history (pass workspaceId so trigger-only system
+  //    messages are included while confirmation/error chips are excluded)
+  const messageHistory = await buildMessageHistory(channelId, 20, workspaceId)
 
   if (messageHistory.length === 0) {
     throw new Error('No messages to respond to')

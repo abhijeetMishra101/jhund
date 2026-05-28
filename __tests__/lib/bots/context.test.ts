@@ -6,6 +6,9 @@ vi.mock('@/lib/supabase/server', () => ({
   createServiceClient: vi.fn().mockReturnValue({ from: mockServiceFrom }),
 }))
 
+const WORKSPACE_ID = 'workspace-uuid'
+const TRIGGER_UUID = '00000000-0000-0000-0000-000000000000'
+
 function makeChain(data: unknown, error: unknown = null) {
   return {
     select: vi.fn().mockReturnThis(),
@@ -44,13 +47,43 @@ describe('buildMessageHistory', () => {
     expect(result[1]).toEqual({ role: 'assistant', content: 'hello back' })
   })
 
-  it('maps system messages to role:user', async () => {
+  it('includes system messages as role:user when no workspaceId provided (backward-compat)', async () => {
     mockServiceFrom.mockReturnValueOnce(makeChain([
-      { author_type: 'system', content: 'PR opened' },
+      { author_type: 'system', author_id: 'any-id', content: 'PR opened' },
     ]))
     const { buildMessageHistory } = await import('@/lib/bots/context')
     const result = await buildMessageHistory('channel-1')
     expect(result).toEqual([{ role: 'user', content: 'PR opened' }])
+  })
+
+  it('includes trigger system messages (author_id === workspaceId) when workspaceId provided', async () => {
+    mockServiceFrom.mockReturnValueOnce(makeChain([
+      { author_type: 'system', author_id: WORKSPACE_ID, content: 'Pull request #42 opened' },
+    ]))
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    const result = await buildMessageHistory('channel-1', 20, WORKSPACE_ID)
+    expect(result).toEqual([{ role: 'user', content: 'Pull request #42 opened' }])
+  })
+
+  it('includes handoff trigger messages (author_id === null UUID) when workspaceId provided', async () => {
+    mockServiceFrom.mockReturnValueOnce(makeChain([
+      { author_type: 'system', author_id: TRIGGER_UUID, content: '🚀 Feature X is ready for stage 3' },
+    ]))
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    const result = await buildMessageHistory('channel-1', 20, WORKSPACE_ID)
+    expect(result).toEqual([{ role: 'user', content: '🚀 Feature X is ready for stage 3' }])
+  })
+
+  it('excludes confirmation/error system messages (author_id === bot UUID) when workspaceId provided', async () => {
+    mockServiceFrom.mockReturnValueOnce(makeChain([
+      { author_type: 'user', author_id: 'user-uuid', content: 'hello' },
+      { author_type: 'system', author_id: 'bot-role-uuid', content: '✓ Decision recorded: use React' },
+      { author_type: 'system', author_id: 'bot-role-uuid', content: 'Something went wrong on my end.' },
+    ]))
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    const result = await buildMessageHistory('channel-1', 20, WORKSPACE_ID)
+    // Only the user message survives — system confirmation/error messages are excluded
+    expect(result).toEqual([{ role: 'user', content: 'hello' }])
   })
 
   it('merges consecutive same-role messages', async () => {

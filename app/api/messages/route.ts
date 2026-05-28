@@ -142,11 +142,12 @@ export async function POST(request: Request) {
           .eq('is_primary', true)
           .single()
         const authorId = memberRow?.bot_role_id ?? user.id
+        const errMsg = err instanceof Error ? err.message : String(err)
         await svc.from('messages').insert({
           channel_id: channelId,
           author_type: 'system',
           author_id: authorId,
-          content: "Something went wrong on my end. Try sending your message again.",
+          content: `Something went wrong on my end: ${errMsg}`,
           ...(parent_id ? { parent_id } : {}),
         })
       } catch (surfaceErr) {
