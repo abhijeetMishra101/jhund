@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
-import { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+import { READ_GITHUB_FILE_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+import { readGithubFile, FileNotFoundError, FileAccessDeniedError } from '@/lib/github/reader'
 import { advanceStage } from '@/lib/feature-stages'
 import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dispatch'
 import { recordDecision } from '@/lib/decisions/record'
@@ -12,7 +13,7 @@ import { getRoleSystemPrompt } from '@/lib/templates/roles'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
-export { PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+export { READ_GITHUB_FILE_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -141,22 +142,71 @@ export async function respondToMessage(
     ? getRoleSystemPrompt(botRole.role_key, workspaceRow.name)
     : botRole.system_prompt // fallback: should never happen in practice
 
-  // 4. Call Claude with cached system prompt + tools
-  const response = await anthropic.messages.create({
+  // 4. Call Claude with cached system prompt + tools, with read loop for read_github_file
+  const MAX_READ_ITERATIONS = 5
+  const tools = [READ_GITHUB_FILE_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL]
+  const system = [
+    {
+      type: 'text' as const,
+      text: systemPromptText,
+      cache_control: { type: 'ephemeral' as const },
+    },
+  ]
+
+  // Mutable messages array so we can append tool_results for read_github_file
+  const messages = [...messageHistory]
+
+  let response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    tools: [PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL],
-    system: [
-      {
-        type: 'text',
-        text: systemPromptText,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: messageHistory,
+    tools,
+    system,
+    messages,
   })
 
-  // 5. Check if Claude used a tool
+  // Read loop — intercept read_github_file tool calls and resolve them immediately.
+  // Runs up to MAX_READ_ITERATIONS times; breaks when Claude calls a different tool or returns text.
+  for (let iteration = 0; iteration < MAX_READ_ITERATIONS; iteration++) {
+    const readBlock = response.content.find(
+      (b) => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'read_github_file'
+    ) as Anthropic.ToolUseBlock | undefined
+
+    if (!readBlock) break // Claude called another tool or returned text — hand off to existing handlers
+
+    const input = readBlock.input as { path: string; branch?: string }
+
+    let toolResultContent: string
+    try {
+      const result = await readGithubFile(workspaceId, input.path, input.branch)
+      toolResultContent = result.content
+    } catch (err) {
+      if (err instanceof FileNotFoundError) {
+        toolResultContent = `File not found: ${input.path}`
+      } else if (err instanceof FileAccessDeniedError) {
+        toolResultContent = `Access denied: ${input.path}`
+      } else {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        toolResultContent = `Error reading ${input.path}: ${message}`
+      }
+    }
+
+    // Append the assistant's tool_use turn and our tool_result response
+    messages.push(
+      { role: 'assistant' as const, content: response.content },
+      { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: readBlock.id, content: toolResultContent }] }
+    )
+
+    // Call Claude again with the file content in context
+    response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      tools,
+      system,
+      messages,
+    })
+  }
+
+  // 5. Check if Claude used a tool (in the final response from the read loop)
   const toolUseBlock = response.content.find((b) => b.type === 'tool_use') as
     | Anthropic.ToolUseBlock
     | undefined

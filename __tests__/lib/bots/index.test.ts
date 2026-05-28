@@ -13,6 +13,7 @@ const mockMarkDecisionDispatched = vi.hoisted(() => vi.fn())
 const mockPostDecisionSummary = vi.hoisted(() => vi.fn())
 const mockCommitDiscussionDoc = vi.hoisted(() => vi.fn())
 const mockUndoDecision = vi.hoisted(() => vi.fn())
+const mockReadGithubFile = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -58,6 +59,19 @@ vi.mock('@/lib/decisions/github-commit', () => ({
 
 vi.mock('@/lib/decisions/undo', () => ({
   undoDecision: mockUndoDecision,
+}))
+
+vi.mock('@/lib/github/reader', () => ({
+  readGithubFile: mockReadGithubFile,
+  FileNotFoundError: class FileNotFoundError extends Error {
+    constructor(path: string) { super(`File not found: ${path}`); this.name = 'FileNotFoundError' }
+  },
+  FileAccessDeniedError: class FileAccessDeniedError extends Error {
+    constructor(path: string) { super(`Access denied: ${path}`); this.name = 'FileAccessDeniedError' }
+  },
+  NoGithubInstallationError: class NoGithubInstallationError extends Error {
+    constructor() { super('No GitHub installation linked to this workspace'); this.name = 'NoGithubInstallationError' }
+  },
 }))
 
 // Mock context so we don't have to wire up the full message-history chain
@@ -1375,5 +1389,183 @@ describe('respondToMessage — undo_decision tool_use', () => {
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store system message')
+  })
+})
+
+// ── read_github_file tool handler (Phase 20) ─────────────────────────────────
+describe('respondToMessage — read_github_file tool_use', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+    mockReadGithubFile.mockReset()
+  })
+
+  function readFileToolResponse(path: string, branch?: string, toolId = 'tool-read-1') {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: toolId,
+          name: 'read_github_file',
+          input: branch ? { path, branch } : { path },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  function textResponse(text = 'Here is what I found in the file.') {
+    return {
+      content: [{ type: 'text', text }],
+      stop_reason: 'end_turn',
+    }
+  }
+
+  it('single read — file content injected as tool_result, second Claude call stores bot message', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-after-read'))
+
+    mockReadGithubFile.mockResolvedValueOnce({
+      content: 'import fastapi\nclass Collector: pass',
+      sha: 'abc123',
+      truncated: false,
+    })
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(readFileToolResponse('src/m1/collector.py'))
+      .mockResolvedValueOnce(textResponse('M1 uses FastAPI. I will build M2 on top of that.'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-after-read')
+    expect(mockReadGithubFile).toHaveBeenCalledWith(WORKSPACE_ID, 'src/m1/collector.py', undefined)
+    // Claude called twice: once for the read, once for the final reply
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+
+    // The second call should include the tool_result message in messages array
+    const secondCallMessages = mockMessagesCreate.mock.calls[1][0].messages as unknown[]
+    const toolResultMsg = secondCallMessages.find(
+      (m) => (m as { role: string }).role === 'user' &&
+        Array.isArray((m as { content: unknown[] }).content) &&
+        ((m as { content: Array<{ type: string }> }).content)[0]?.type === 'tool_result'
+    )
+    expect(toolResultMsg).toBeDefined()
+  })
+
+  it('two reads — both tool_results injected before final Claude response is stored', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-after-two-reads'))
+
+    mockReadGithubFile
+      .mockResolvedValueOnce({ content: '# Module 1', sha: 'sha1', truncated: false })
+      .mockResolvedValueOnce({ content: '# Module 2 stub', sha: 'sha2', truncated: false })
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(readFileToolResponse('src/m1/index.py', undefined, 'tool-read-a'))
+      .mockResolvedValueOnce(readFileToolResponse('src/m2/index.py', undefined, 'tool-read-b'))
+      .mockResolvedValueOnce(textResponse('I have read both files.'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-after-two-reads')
+    expect(mockReadGithubFile).toHaveBeenCalledTimes(2)
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(3)
+  })
+
+  it('file not found — tool_result contains "File not found:" and Claude still gets called', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-file-not-found'))
+
+    const { FileNotFoundError } = await import('@/lib/github/reader')
+    mockReadGithubFile.mockRejectedValueOnce(new FileNotFoundError('missing.py'))
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(readFileToolResponse('missing.py'))
+      .mockResolvedValueOnce(textResponse("That file doesn't exist yet."))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-file-not-found')
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+
+    // The tool_result injected into the second call should contain the error message
+    const secondCallMessages = mockMessagesCreate.mock.calls[1][0].messages as unknown[]
+    const toolResultMsg = secondCallMessages.find(
+      (m) =>
+        (m as { role: string }).role === 'user' &&
+        Array.isArray((m as { content: unknown[] }).content) &&
+        ((m as { content: Array<{ content?: string }> }).content)[0]?.content?.includes('File not found:')
+    )
+    expect(toolResultMsg).toBeDefined()
+  })
+
+  it('after read loop exits on non-read tool_use, existing propose_github_action handler runs', async () => {
+    setupBotResolutionMocks()
+
+    // plans insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'plan-after-read' }, error: null }),
+      }),
+    })
+    // messages insert
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-propose-after-read'))
+
+    mockReadGithubFile.mockResolvedValueOnce({ content: 'existing code', sha: 'sha1', truncated: false })
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(readFileToolResponse('src/app.ts'))
+      .mockResolvedValueOnce({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-propose',
+            name: 'propose_github_action',
+            input: {
+              plain_english_description: 'Update src/app.ts with new feature',
+              actions: [{ action_type: 'commit_file', payload: { file_path: 'src/app.ts', content: 'new code', commit_message: 'Add feature', branch: 'bot/feature' } }],
+            },
+          },
+        ],
+        stop_reason: 'tool_use',
+      })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-propose-after-read')
+    expect(mockReadGithubFile).toHaveBeenCalledOnce()
+    // Claude called twice: once for read, once returning propose_github_action
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it('loop caps at MAX_READ_ITERATIONS (5) without infinite loop — breaks and stores final text response', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-cap'))
+
+    // readGithubFile always succeeds
+    mockReadGithubFile.mockResolvedValue({ content: 'some content', sha: 'sha', truncated: false })
+
+    // Claude returns read_github_file 5 times, then returns text on 6th call
+    for (let i = 0; i < 5; i++) {
+      mockMessagesCreate.mockResolvedValueOnce(readFileToolResponse(`src/file${i}.py`, undefined, `tool-${i}`))
+    }
+    // 6th call (after loop exits at MAX_READ_ITERATIONS) — this is the call made on the last iteration
+    // Actually the loop runs up to 5 iterations; on the 5th the loop increments to 5 and exits.
+    // The 6th mockMessagesCreate should be the final stored text.
+    mockMessagesCreate.mockResolvedValueOnce(textResponse('I read 5 files.'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-cap')
+    // readGithubFile called at most 5 times (cap)
+    expect(mockReadGithubFile).toHaveBeenCalledTimes(5)
+    // Total Claude calls: 6 (1 initial + 5 in loop, last one returns text which exits loop)
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(6)
   })
 })

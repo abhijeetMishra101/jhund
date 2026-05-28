@@ -1,5 +1,29 @@
 import type Anthropic from '@anthropic-ai/sdk'
 
+/** Reads the current contents of a file from the connected GitHub repository. */
+export const READ_GITHUB_FILE_TOOL: Anthropic.Tool = {
+  name: 'read_github_file',
+  description:
+    'Read the current contents of a file from the connected GitHub repository. ' +
+    'Call this BEFORE proposing any change to an existing file. ' +
+    'You may call it multiple times in one response to read several files. ' +
+    'Do NOT call this for files you are about to create from scratch.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      path: {
+        type: 'string',
+        description: 'File path relative to repo root, e.g. "src/m1/collector.py"',
+      },
+      branch: {
+        type: 'string',
+        description: 'Branch to read from. Omit to use the repo default branch.',
+      },
+    },
+    required: ['path'],
+  },
+}
+
 /** Proposes one or more GitHub actions for the founder to approve. */
 export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
   name: 'propose_github_action',
