@@ -1,8 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
-import { READ_GITHUB_FILE_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
-import { readGithubFile, FileNotFoundError, FileAccessDeniedError } from '@/lib/github/reader'
+import { READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+import { readGithubFile, listDirectory, FileNotFoundError, FileAccessDeniedError, DirectoryNotFoundError, DirectoryAccessDeniedError } from '@/lib/github/reader'
+import { isAutoApprovable } from './auto-approve'
+import { executePlanActions } from '@/lib/github/executor'
 import { advanceStage } from '@/lib/feature-stages'
 import { getDispatchTargets, postHandoffMessage } from '@/lib/feature-stages/dispatch'
 import { recordDecision } from '@/lib/decisions/record'
@@ -13,7 +15,7 @@ import { getRoleSystemPrompt } from '@/lib/templates/roles'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
-export { READ_GITHUB_FILE_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+export { READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -145,7 +147,7 @@ export async function respondToMessage(
 
   // 4. Call Claude with cached system prompt + tools, with read loop for read_github_file
   const MAX_READ_ITERATIONS = 5
-  const tools = [READ_GITHUB_FILE_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL]
+  const tools = [READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL]
   const system = [
     {
       type: 'text' as const,
@@ -172,31 +174,51 @@ export async function respondToMessage(
   // Runs up to MAX_READ_ITERATIONS times; breaks when there are no read_github_file
   // calls in the response (Claude called another tool or returned text).
   for (let iteration = 0; iteration < MAX_READ_ITERATIONS; iteration++) {
-    // Collect ALL read_github_file tool_use blocks from this response (parallel reads)
+    // Collect ALL read_github_file and list_directory tool_use blocks from this response (parallel reads)
     const readBlocks = response.content.filter(
-      (b) => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'read_github_file'
+      (b) => b.type === 'tool_use' &&
+        ((b as Anthropic.ToolUseBlock).name === 'read_github_file' ||
+         (b as Anthropic.ToolUseBlock).name === 'list_directory')
     ) as Anthropic.ToolUseBlock[]
 
     if (readBlocks.length === 0) break // Claude called another tool or returned text — hand off
 
-    // Resolve all file reads in parallel, one tool_result per tool_use block
+    // Resolve all file reads and directory listings in parallel, one tool_result per tool_use block
     const toolResults = await Promise.all(
       readBlocks.map(async (readBlock) => {
         const input = readBlock.input as { path: string; branch?: string }
         let content: string
-        try {
-          const result = await readGithubFile(workspaceId, input.path, input.branch)
-          content = result.content
-        } catch (err) {
-          if (err instanceof FileNotFoundError) {
-            content = `File not found: ${input.path}`
-          } else if (err instanceof FileAccessDeniedError) {
-            content = `Access denied: ${input.path}`
-          } else {
-            const message = err instanceof Error ? err.message : 'Unknown error'
-            content = `Error reading ${input.path}: ${message}`
+
+        if (readBlock.name === 'list_directory') {
+          try {
+            const result = await listDirectory(workspaceId, input.path, input.branch)
+            content = JSON.stringify(result)
+          } catch (err) {
+            if (err instanceof DirectoryNotFoundError) {
+              content = `Directory not found: ${input.path}`
+            } else if (err instanceof DirectoryAccessDeniedError) {
+              content = `Access denied: ${input.path}`
+            } else {
+              const message = err instanceof Error ? err.message : 'Unknown error'
+              content = `Error listing ${input.path}: ${message}`
+            }
+          }
+        } else {
+          try {
+            const result = await readGithubFile(workspaceId, input.path, input.branch)
+            content = result.content
+          } catch (err) {
+            if (err instanceof FileNotFoundError) {
+              content = `File not found: ${input.path}`
+            } else if (err instanceof FileAccessDeniedError) {
+              content = `Access denied: ${input.path}`
+            } else {
+              const message = err instanceof Error ? err.message : 'Unknown error'
+              content = `Error reading ${input.path}: ${message}`
+            }
           }
         }
+
         return { type: 'tool_result' as const, tool_use_id: readBlock.id, content }
       })
     )
@@ -223,8 +245,8 @@ export async function respondToMessage(
     | Anthropic.ToolUseBlock
     | undefined
 
-  // Guard: if we exhausted MAX_READ_ITERATIONS and Claude still wants to read, surface a friendly message.
-  if (toolUseBlock?.name === 'read_github_file') {
+  // Guard: if we exhausted MAX_READ_ITERATIONS and Claude still wants to read/list, surface a friendly message.
+  if (toolUseBlock?.name === 'read_github_file' || toolUseBlock?.name === 'list_directory') {
     const { data: stored } = await supabase.from('messages').insert({
       channel_id: channelId,
       author_type: 'system',
@@ -512,6 +534,7 @@ export async function respondToMessage(
     const input = toolUseBlock.input as {
       plain_english_description: string
       actions: Array<{ action_type: string; payload: Record<string, unknown> }>
+      confidence?: 'auto' | 'review'
     }
 
     // Normalise actions — Claude occasionally returns a single object instead of an array
@@ -554,6 +577,66 @@ export async function respondToMessage(
       return stored.id
     }
 
+    const confidence = input.confidence ?? 'review'
+
+    // Auto-approve path: bot declared confidence='auto' AND server-side allowlist passes
+    if (confidence === 'auto' && isAutoApprovable(actions)) {
+      // 1. Insert plan row with auto_approved=true
+      const { data: plan, error: planError } = await supabase
+        .from('plans')
+        .insert({
+          channel_id: channelId,
+          bot_role_id: botRole.id,
+          description_md: displayDescription,
+          github_actions: actions as unknown as import('@/lib/supabase/types').Json,
+          status: 'pending',
+          auto_approved: true,
+        } as never)
+        .select('id')
+        .single()
+
+      if (planError || !plan) {
+        throw new Error(`Failed to create plan: ${planError?.message ?? 'no data'}`)
+      }
+
+      // 2. Post a visible system message so the founder can see what's happening
+      await supabase.from('messages').insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: workspaceId,
+        content: `⚡ Auto-executing: ${displayDescription}`,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+
+      // 3. Mark as approved and execute — reuse existing executor
+      await supabase
+        .from('plans')
+        .update({ status: 'approved', approved_at: new Date().toISOString() } as never)
+        .eq('id', plan.id)
+
+      await executePlanActions(plan.id, workspaceId)
+
+      // 4. Post completion message
+      const { data: stored, error: insertError } = await supabase
+        .from('messages')
+        .insert({
+          channel_id: channelId,
+          author_type: 'system',
+          author_id: workspaceId,
+          content: 'Done — changes committed to GitHub.',
+          ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+        })
+        .select('id')
+        .single()
+
+      if (insertError || !stored) {
+        throw new Error(`Failed to store completion message: ${insertError?.message ?? 'no data'}`)
+      }
+
+      return stored.id
+    }
+
+    // Normal plan-approval path — show plan chip to founder
     // Create the plan row first
     const { data: plan, error: planError } = await supabase
       .from('plans')

@@ -177,3 +177,121 @@ describe('readGithubFile', () => {
     await expect(readGithubFile(WORKSPACE_ID, 'src/')).rejects.toThrow(FileNotFoundError)
   })
 })
+
+describe('listDirectory', () => {
+  it('happy path — returns name/path/type entries for a directory', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockResolvedValueOnce({
+      data: [
+        { name: 'index.ts', path: 'lib/bots/index.ts', type: 'file' },
+        { name: 'tools.ts', path: 'lib/bots/tools.ts', type: 'file' },
+        { name: 'helpers',  path: 'lib/bots/helpers',  type: 'dir'  },
+      ],
+    })
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    const result = await listDirectory(WORKSPACE_ID, 'lib/bots')
+
+    expect(result).toEqual([
+      { name: 'index.ts', path: 'lib/bots/index.ts', type: 'file' },
+      { name: 'tools.ts', path: 'lib/bots/tools.ts', type: 'file' },
+      { name: 'helpers',  path: 'lib/bots/helpers',  type: 'dir'  },
+    ])
+  })
+
+  it('maps any non-"dir" type to "file" (blob, symlink, submodule, etc)', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockResolvedValueOnce({
+      data: [
+        { name: 'link', path: 'lib/link', type: 'symlink' },
+      ],
+    })
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    const result = await listDirectory(WORKSPACE_ID, 'lib')
+    expect(result[0].type).toBe('file')
+  })
+
+  it('throws DirectoryNotFoundError on 404 from getContent', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockRejectedValueOnce(
+      Object.assign(new Error('Not Found'), { status: 404 })
+    )
+
+    const { listDirectory, DirectoryNotFoundError } = await import('@/lib/github/reader')
+    await expect(listDirectory(WORKSPACE_ID, 'lib/missing')).rejects.toThrow(DirectoryNotFoundError)
+  })
+
+  it('throws DirectoryAccessDeniedError on 403 from getContent', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockRejectedValueOnce(
+      Object.assign(new Error('Forbidden'), { status: 403 })
+    )
+
+    const { listDirectory, DirectoryAccessDeniedError } = await import('@/lib/github/reader')
+    await expect(listDirectory(WORKSPACE_ID, 'lib/secret')).rejects.toThrow(DirectoryAccessDeniedError)
+  })
+
+  it('throws "Not a directory" when path resolves to a single file', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    // GitHub returns an object (not array) for a file path
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', name: 'index.ts', path: 'lib/bots/index.ts', content: '', sha: 'abc' },
+    })
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    await expect(listDirectory(WORKSPACE_ID, 'lib/bots/index.ts')).rejects.toThrow('Not a directory')
+  })
+
+  it('throws NoGithubInstallationError when no installation found', async () => {
+    mockServiceFrom.mockReturnValueOnce(noInstallationChain())
+
+    const { listDirectory, NoGithubInstallationError } = await import('@/lib/github/reader')
+    await expect(listDirectory(WORKSPACE_ID, 'lib/bots')).rejects.toThrow(NoGithubInstallationError)
+  })
+
+  it('uses default branch when branch param is omitted', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGet.mockResolvedValueOnce({ data: { default_branch: 'develop' } })
+    mockReposGetContent.mockResolvedValueOnce({ data: [] })
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    await listDirectory(WORKSPACE_ID, 'lib/bots')
+
+    expect(mockReposGetContent).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'develop' })
+    )
+  })
+
+  it('uses provided branch and skips repos.get', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockResolvedValueOnce({ data: [] })
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    await listDirectory(WORKSPACE_ID, 'lib/bots', 'feat/my-branch')
+
+    expect(mockReposGet).not.toHaveBeenCalled()
+    expect(mockReposGetContent).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'feat/my-branch' })
+    )
+  })
+
+  it('rethrows unexpected errors (not 404/403)', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockRejectedValueOnce(
+      Object.assign(new Error('Service Unavailable'), { status: 503 })
+    )
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    await expect(listDirectory(WORKSPACE_ID, 'lib')).rejects.toThrow('Service Unavailable')
+  })
+
+  it('returns empty array for an empty directory', async () => {
+    mockServiceFrom.mockReturnValueOnce(installationChain())
+    mockReposGetContent.mockResolvedValueOnce({ data: [] })
+
+    const { listDirectory } = await import('@/lib/github/reader')
+    const result = await listDirectory(WORKSPACE_ID, 'lib/empty')
+    expect(result).toEqual([])
+  })
+})

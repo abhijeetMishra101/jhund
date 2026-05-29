@@ -15,6 +15,20 @@ export class FileAccessDeniedError extends Error {
   }
 }
 
+export class DirectoryNotFoundError extends Error {
+  constructor(path: string) {
+    super(`Directory not found: ${path}`)
+    this.name = 'DirectoryNotFoundError'
+  }
+}
+
+export class DirectoryAccessDeniedError extends Error {
+  constructor(path: string) {
+    super(`Access denied: ${path}`)
+    this.name = 'DirectoryAccessDeniedError'
+  }
+}
+
 export class NoGithubInstallationError extends Error {
   constructor() {
     super('No GitHub installation linked to this workspace')
@@ -87,4 +101,66 @@ export async function readGithubFile(
   const content = truncated ? decoded.slice(0, MAX_CONTENT_CHARS) : decoded
 
   return { content, sha: fileData.sha, truncated }
+}
+
+/**
+ * Lists the files and sub-directories at a given path in the connected GitHub repository.
+ *
+ * @param workspaceId - The workspace whose GitHub installation to use
+ * @param dirPath - Directory path relative to repo root. Use "" for the root.
+ * @param branch - Branch to read from. Omits to use the repo default branch.
+ * @returns Array of { name, path, type } entries at that directory level
+ * @throws NoGithubInstallationError if no installation is linked or repo is 'pending'
+ * @throws DirectoryNotFoundError on 404 or if path points to a file
+ * @throws DirectoryAccessDeniedError on 403
+ */
+export async function listDirectory(
+  workspaceId: string,
+  dirPath: string,
+  branch?: string
+): Promise<{ name: string; path: string; type: 'file' | 'dir' }[]> {
+  const supabase = createServiceClient()
+
+  const { data: installation } = await supabase
+    .from('github_installations')
+    .select('installation_id, repo_full_name')
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (!installation || !installation.repo_full_name || installation.repo_full_name === 'pending') {
+    throw new NoGithubInstallationError()
+  }
+
+  const octokit = await getInstallationOctokit(Number(installation.installation_id))
+  const [owner, repo] = installation.repo_full_name.split('/')
+
+  // Resolve the branch to read from
+  let ref = branch
+  if (!ref) {
+    const { data: repoData } = await octokit.rest.repos.get({ owner, repo })
+    ref = repoData.default_branch
+  }
+
+  // Fetch the directory content
+  let dirData: Awaited<ReturnType<typeof octokit.rest.repos.getContent>>['data']
+  try {
+    const response = await octokit.rest.repos.getContent({ owner, repo, path: dirPath, ref })
+    dirData = response.data
+  } catch (err) {
+    const status = (err as { status?: number }).status
+    if (status === 404) throw new DirectoryNotFoundError(dirPath)
+    if (status === 403) throw new DirectoryAccessDeniedError(dirPath)
+    throw err
+  }
+
+  // Guard: GitHub returns an object (not array) when the path is a file
+  if (!Array.isArray(dirData)) {
+    throw new Error(`Not a directory: ${dirPath}`)
+  }
+
+  return dirData.map((entry) => ({
+    name: entry.name,
+    path: entry.path,
+    type: entry.type === 'dir' ? 'dir' : 'file',
+  }))
 }

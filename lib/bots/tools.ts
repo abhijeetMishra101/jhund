@@ -24,6 +24,30 @@ export const READ_GITHUB_FILE_TOOL: Anthropic.Tool = {
   },
 }
 
+/** Lists the files and sub-folders in a directory of the connected GitHub repository. */
+export const LIST_DIRECTORY_TOOL: Anthropic.Tool = {
+  name: 'list_directory',
+  description:
+    'List the files and sub-folders in a directory of the connected GitHub repository. ' +
+    'Use this to explore the codebase structure before deciding which files to read. ' +
+    'Returns names, paths, and types (file or directory). ' +
+    'Use "" (empty string) as the path to list the repo root.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      path: {
+        type: 'string',
+        description: 'Directory path relative to repo root. Use "" for the root. Examples: "lib/bots", "src/components"',
+      },
+      branch: {
+        type: 'string',
+        description: 'Branch to read from. Omit to use the repo default branch.',
+      },
+    },
+    required: ['path'],
+  },
+}
+
 /** Proposes one or more GitHub actions for the founder to approve. */
 export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
   name: 'propose_github_action',
@@ -75,6 +99,16 @@ export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
           },
           required: ['action_type', 'payload'],
         },
+      },
+      confidence: {
+        type: 'string',
+        enum: ['auto', 'review'],
+        description:
+          '"auto" — low-risk change, can execute without founder approval. ' +
+          'Only use "auto" when ALL of: (1) every action is commit_file only, ' +
+          '(2) every file path is in docs/, __tests__/, or matches *.test.ts/*.test.js/*.spec.ts/*.md, ' +
+          '(3) branch starts with "bot/". ' +
+          '"review" — default, requires founder approval.',
       },
     },
     required: ['plain_english_description', 'actions'],
