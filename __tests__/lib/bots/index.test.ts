@@ -1975,4 +1975,56 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     const msgPayload = plansInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
     expect(msgPayload.auto_approved).toBeUndefined()
   })
+
+  it('auto-approve: throws "Failed to create plan" when plan insert fails (line 599)', async () => {
+    setupBotResolutionMocks()
+
+    const plansInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'insert failed' } }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
+
+    mockMessagesCreate.mockResolvedValueOnce(
+      autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to create plan')
+  })
+
+  it('auto-approve: throws "Failed to store completion message" when final insert fails (line 633)', async () => {
+    setupBotResolutionMocks()
+
+    // Plan insert succeeds
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'auto-plan' }, error: null }),
+      }),
+    })
+    // "⚡ Auto-executing" system message insert succeeds
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ error: null }) })
+    // Plan update (status → approved) succeeds
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    })
+    // executePlanActions succeeds
+    mockExecutePlanActions.mockResolvedValueOnce(undefined)
+    // Completion message insert FAILS
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: { message: 'insert failed' } }),
+      }),
+    })
+
+    mockMessagesCreate.mockResolvedValueOnce(
+      autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store completion message')
+  })
 })
