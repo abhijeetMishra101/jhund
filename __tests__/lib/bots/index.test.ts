@@ -14,6 +14,8 @@ const mockPostDecisionSummary = vi.hoisted(() => vi.fn())
 const mockCommitDiscussionDoc = vi.hoisted(() => vi.fn())
 const mockUndoDecision = vi.hoisted(() => vi.fn())
 const mockReadGithubFile = vi.hoisted(() => vi.fn())
+const mockListDirectory = vi.hoisted(() => vi.fn())
+const mockExecutePlanActions = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -63,14 +65,28 @@ vi.mock('@/lib/decisions/undo', () => ({
 
 vi.mock('@/lib/github/reader', () => ({
   readGithubFile: mockReadGithubFile,
+  listDirectory: mockListDirectory,
   FileNotFoundError: class FileNotFoundError extends Error {
     constructor(path: string) { super(`File not found: ${path}`); this.name = 'FileNotFoundError' }
   },
   FileAccessDeniedError: class FileAccessDeniedError extends Error {
     constructor(path: string) { super(`Access denied: ${path}`); this.name = 'FileAccessDeniedError' }
   },
+  DirectoryNotFoundError: class DirectoryNotFoundError extends Error {
+    constructor(path: string) { super(`Directory not found: ${path}`); this.name = 'DirectoryNotFoundError' }
+  },
+  DirectoryAccessDeniedError: class DirectoryAccessDeniedError extends Error {
+    constructor(path: string) { super(`Access denied: ${path}`); this.name = 'DirectoryAccessDeniedError' }
+  },
   NoGithubInstallationError: class NoGithubInstallationError extends Error {
     constructor() { super('No GitHub installation linked to this workspace'); this.name = 'NoGithubInstallationError' }
+  },
+}))
+
+vi.mock('@/lib/github/executor', () => ({
+  executePlanActions: mockExecutePlanActions,
+  ActionCapExceededError: class ActionCapExceededError extends Error {
+    constructor() { super('Action cap exceeded'); this.name = 'ActionCapExceededError' }
   },
 }))
 
@@ -1609,5 +1625,354 @@ describe('respondToMessage — read_github_file tool_use', () => {
     expect(mockReadGithubFile).toHaveBeenCalledTimes(5)
     // Total Claude calls: 6 (1 initial + 5 in loop, last one returns text which exits loop)
     expect(mockMessagesCreate).toHaveBeenCalledTimes(6)
+  })
+})
+
+// ── list_directory tool handler (Phase 21) ───────────────────────────────────
+describe('respondToMessage — list_directory tool_use in read loop', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+    mockReadGithubFile.mockReset()
+    mockListDirectory.mockReset()
+  })
+
+  function listDirToolResponse(path: string, branch?: string, toolId = 'tool-list-1') {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: toolId,
+          name: 'list_directory',
+          input: branch ? { path, branch } : { path },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  function textResponse(text = 'Here is what I found.') {
+    return {
+      content: [{ type: 'text', text }],
+      stop_reason: 'end_turn',
+    }
+  }
+
+  it('list_directory in read loop: Claude returns list_directory tool_use → server resolves → Claude gets tool_result in next turn', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-after-list'))
+
+    mockListDirectory.mockResolvedValueOnce([
+      { name: 'index.ts', path: 'lib/bots/index.ts', type: 'file' },
+      { name: 'tools.ts', path: 'lib/bots/tools.ts', type: 'file' },
+    ])
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(listDirToolResponse('lib/bots'))
+      .mockResolvedValueOnce(textResponse('I can see two files in lib/bots.'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-after-list')
+    expect(mockListDirectory).toHaveBeenCalledWith(WORKSPACE_ID, 'lib/bots', undefined)
+    // Claude called twice: once for the list, once for the final reply
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+
+    // The second call should include the tool_result message in messages array
+    const secondCallMessages = mockMessagesCreate.mock.calls[1][0].messages as unknown[]
+    const toolResultMsg = secondCallMessages.find(
+      (m) => (m as { role: string }).role === 'user' &&
+        Array.isArray((m as { content: unknown[] }).content) &&
+        ((m as { content: Array<{ type: string }> }).content)[0]?.type === 'tool_result'
+    )
+    expect(toolResultMsg).toBeDefined()
+
+    // The tool_result should contain JSON of the directory listing
+    const toolResultContent = (toolResultMsg as { content: Array<{ content: string }> }).content[0].content
+    const parsed = JSON.parse(toolResultContent)
+    expect(parsed).toHaveLength(2)
+    expect(parsed[0].name).toBe('index.ts')
+    expect(parsed[0].type).toBe('file')
+  })
+
+  it('directory not found — tool_result contains "Directory not found:" and Claude still gets called', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-dir-not-found'))
+
+    const { DirectoryNotFoundError } = await import('@/lib/github/reader')
+    mockListDirectory.mockRejectedValueOnce(new DirectoryNotFoundError('lib/nonexistent'))
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(listDirToolResponse('lib/nonexistent'))
+      .mockResolvedValueOnce(textResponse("That directory doesn't exist."))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-dir-not-found')
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+
+    // The tool_result should contain the error message
+    const secondCallMessages = mockMessagesCreate.mock.calls[1][0].messages as unknown[]
+    const toolResultMsg = secondCallMessages.find(
+      (m) =>
+        (m as { role: string }).role === 'user' &&
+        Array.isArray((m as { content: unknown[] }).content) &&
+        ((m as { content: Array<{ content?: string }> }).content)[0]?.content?.includes('Directory not found:')
+    )
+    expect(toolResultMsg).toBeDefined()
+  })
+
+  it('mixed list_directory + read_github_file in same response: both resolved in one Promise.all → both tool_results in one user turn', async () => {
+    setupBotResolutionMocks()
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-mixed'))
+
+    mockListDirectory.mockResolvedValueOnce([
+      { name: 'index.ts', path: 'lib/bots/index.ts', type: 'file' },
+    ])
+    mockReadGithubFile.mockResolvedValueOnce({
+      content: '// some file content',
+      sha: 'sha1',
+      truncated: false,
+    })
+
+    mockMessagesCreate
+      // First call: Claude returns one list_directory and one read_github_file in the same response
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'tool_use', id: 'tool-list-a', name: 'list_directory', input: { path: 'lib/bots' } },
+          { type: 'tool_use', id: 'tool-read-b', name: 'read_github_file', input: { path: 'lib/bots/index.ts' } },
+        ],
+        stop_reason: 'tool_use',
+      })
+      // Second call: Claude responds after seeing both results
+      .mockResolvedValueOnce(textResponse('I listed the dir and read the file.'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('msg-mixed')
+    expect(mockListDirectory).toHaveBeenCalledTimes(1)
+    expect(mockReadGithubFile).toHaveBeenCalledTimes(1)
+    // Only 2 Claude calls — both resolved in one loop iteration
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+
+    // The second call must have both tool_results in one user message
+    const secondCallMessages = mockMessagesCreate.mock.calls[1][0].messages as unknown[]
+    const toolResultMsg = secondCallMessages.find(
+      (m) =>
+        (m as { role: string }).role === 'user' &&
+        Array.isArray((m as { content: unknown[] }).content) &&
+        (m as { content: unknown[] }).content.length === 2 // two results
+    )
+    expect(toolResultMsg).toBeDefined()
+  })
+})
+
+// ── propose_github_action auto-approve (Phase 21) ────────────────────────────
+describe('respondToMessage — propose_github_action auto-approve fork', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+    mockExecutePlanActions.mockReset()
+  })
+
+  function autoApproveToolResponse(
+    filePath: string,
+    branch: string,
+    description = 'Update docs',
+    confidence: 'auto' | 'review' = 'auto'
+  ) {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-propose-auto',
+          name: 'propose_github_action',
+          input: {
+            plain_english_description: description,
+            confidence,
+            actions: [
+              {
+                action_type: 'commit_file',
+                payload: {
+                  file_path: filePath,
+                  content: '# Updated',
+                  commit_message: 'update doc',
+                  branch,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  it('auto-approve happy path: docs/ commit_file with confidence=auto creates plan + executes + posts system messages', async () => {
+    setupBotResolutionMocks()
+    mockExecutePlanActions.mockResolvedValueOnce(undefined)
+
+    // plans insert
+    const plansInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'auto-plan-uuid' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
+
+    // system message: "⚡ Auto-executing: ..."
+    const autoExecMsgMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'auto-exec-msg' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: autoExecMsgMock })
+
+    // plans update (set status=approved)
+    mockServiceFrom.mockReturnValueOnce({
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    })
+
+    // completion message: "Done — changes committed..."
+    const doneMsgMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'done-msg-uuid' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: doneMsgMock })
+
+    mockMessagesCreate.mockResolvedValueOnce(
+      autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    // Returns the id of the completion message
+    expect(id).toBe('done-msg-uuid')
+
+    // executePlanActions was called with the plan id and workspace id
+    expect(mockExecutePlanActions).toHaveBeenCalledWith('auto-plan-uuid', WORKSPACE_ID)
+
+    // Plans was inserted with auto_approved=true
+    const planPayload = plansInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(planPayload.auto_approved).toBe(true)
+    expect(planPayload.status).toBe('pending')
+
+    // System messages were posted
+    const autoExecContent = (autoExecMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(autoExecContent).toContain('⚡ Auto-executing')
+    expect(autoExecContent).toContain('Update API docs')
+
+    const doneContent = (doneMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(doneContent).toContain('Done')
+    expect(doneContent).toContain('GitHub')
+  })
+
+  it('auto-approve fallback: confidence=auto but action is create_pr → falls back to normal plan chip', async () => {
+    setupBotResolutionMocks()
+
+    // plans insert (normal path)
+    const plansInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'normal-plan-uuid' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
+
+    // messages insert (bot message with plan chip)
+    const messagesInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'normal-msg-uuid' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: messagesInsertMock })
+
+    // Claude proposes a create_pr with confidence=auto (server should reject auto-approve)
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-propose-pr',
+          name: 'propose_github_action',
+          input: {
+            plain_english_description: 'Open a PR to add the API docs',
+            confidence: 'auto',
+            actions: [
+              {
+                action_type: 'create_pr',
+                payload: { title: 'Add API docs', body: 'PR body', head_branch: 'bot/docs', base_branch: 'main' },
+              },
+            ],
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    // Returns bot message id (normal plan chip path)
+    expect(id).toBe('normal-msg-uuid')
+
+    // executePlanActions should NOT have been called — fell back to plan chip
+    expect(mockExecutePlanActions).not.toHaveBeenCalled()
+
+    // Plans was inserted WITHOUT auto_approved (normal path)
+    const planPayload = plansInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(planPayload.auto_approved).toBeUndefined()
+
+    // Bot message was linked to the plan via plan_id
+    const msgPayload = messagesInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(msgPayload.plan_id).toBe('normal-plan-uuid')
+    expect(msgPayload.author_type).toBe('bot')
+  })
+
+  it('auto-approve fallback: confidence=auto but file is in src/ (not whitelisted) → normal plan chip', async () => {
+    setupBotResolutionMocks()
+
+    const plansInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'normal-plan-src' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('normal-msg-src'))
+
+    mockMessagesCreate.mockResolvedValueOnce(
+      autoApproveToolResponse('src/app/auth.ts', 'bot/fix-auth', 'Fix auth bug', 'auto')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('normal-msg-src')
+    expect(mockExecutePlanActions).not.toHaveBeenCalled()
+  })
+
+  it('confidence=review (default) always goes through normal plan chip regardless of file path', async () => {
+    setupBotResolutionMocks()
+
+    const plansInsertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'review-plan' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('review-msg'))
+
+    // Even a docs/ commit_file with confidence=review should go through normal path
+    mockMessagesCreate.mockResolvedValueOnce(
+      autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'review')
+    )
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('review-msg')
+    expect(mockExecutePlanActions).not.toHaveBeenCalled()
+
+    // Bot message was linked to the plan (normal path)
+    const msgPayload = plansInsertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(msgPayload.auto_approved).toBeUndefined()
   })
 })
