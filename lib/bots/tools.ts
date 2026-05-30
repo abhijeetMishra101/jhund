@@ -54,7 +54,12 @@ export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
   description:
     'Propose one or more GitHub actions for the founder to approve in a single click. ' +
     'Pass all steps as an ordered array — they execute in sequence after approval. ' +
-    'To write a file and open a PR, include commit_file as the first action and create_pr as the second. ' +
+    'CRITICAL FILE EDITING RULES — read before choosing action_type:\n' +
+    '  • commit_file    = CREATE a new file that does NOT exist yet\n' +
+    '  • patch_github_file = EDIT a file that already exists (supply old_string + new_string)\n' +
+    'NEVER use commit_file on an existing file — the server will reject it.\n' +
+    'To create a file and open a PR: commit_file first, then create_pr.\n' +
+    'To edit a file and open a PR: patch_github_file first, then create_pr.\n' +
     'Never take GitHub actions directly — always use this tool.',
   input_schema: {
     type: 'object' as const,
