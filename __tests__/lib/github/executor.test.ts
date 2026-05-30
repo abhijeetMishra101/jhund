@@ -418,7 +418,7 @@ describe('executePlanActions', () => {
     expect(call).not.toHaveProperty('sha')
   })
 
-  it('commit_file: updates an existing file passing sha', async () => {
+  it('commit_file: throws FileAlreadyExistsError when file already exists on the branch', async () => {
     mockReposGetContent.mockResolvedValueOnce({
       data: { type: 'file', sha: 'existingsha456' },
     })
@@ -427,19 +427,20 @@ describe('executePlanActions', () => {
       action_type: 'commit_file',
       payload: { file_path: 'src/index.ts', content: 'export {}', commit_message: 'Update index', branch: 'bot/update-index' },
     }]
-    mockServiceFrom
-      .mockReturnValueOnce(planChain(actions))
-      .mockReturnValueOnce(installationChain())
-      .mockReturnValueOnce(workspaceChain())
-      .mockReturnValueOnce(updateChain())
+    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    let fromCallIdx = 0
+    mockServiceFrom.mockImplementation(() => {
+      fromCallIdx++
+      if (fromCallIdx === 1) return planChain(actions)
+      if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
+      return { update: mockUpdate }
+    })
 
-    const { executePlanActions } = await import('@/lib/github/executor')
-    await executePlanActions(PLAN_ID, WORKSPACE_ID)
-
-    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith(expect.objectContaining({
-      path: 'src/index.ts',
-      sha: 'existingsha456',
-    }))
+    const { executePlanActions, FileAlreadyExistsError } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow(FileAlreadyExistsError)
+    // Plan should be marked failed
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
   })
 
   it('commit_file: encodes content as base64', async () => {
@@ -480,7 +481,191 @@ describe('executePlanActions', () => {
     expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith(expect.objectContaining({
       path: 'README.md',
       branch: 'main',
-      message: 'Update README.md',
+      message: 'Add README.md',
     }))
+  })
+
+  // ── patch_github_file ───────────────────────────────────────────────────────
+
+  it('patch_github_file: happy path — fetches file, replaces old_string once, commits with sha', async () => {
+    const original = 'line one\nconst X = 5\nline three'
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'filesha123' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: {
+        file_path: 'lib/config.ts',
+        old_string: 'const X = 5',
+        new_string: 'const X = 10',
+        branch: 'bot/bump-x',
+        commit_message: 'patch: bump X',
+      },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    const expected = 'line one\nconst X = 10\nline three'
+    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      path: 'lib/config.ts',
+      message: 'patch: bump X',
+      content: Buffer.from(expected).toString('base64'),
+      sha: 'filesha123',
+      branch: 'bot/bump-x',
+    })
+  })
+
+  it('patch_github_file: preserves all surrounding content — only targeted section changes', async () => {
+    // Simulate a large file where only one section should change
+    const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}: original content here`)
+    lines[49] = 'const TARGET = "old"'
+    const original = lines.join('\n')
+
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'sha-large' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: {
+        file_path: 'lib/big.ts',
+        old_string: 'const TARGET = "old"',
+        new_string: 'const TARGET = "new"',
+        branch: 'bot/fix-target',
+      },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    const submitted = mockReposCreateOrUpdateFileContents.mock.calls[0][0]
+    const resultLines = Buffer.from(submitted.content, 'base64').toString('utf8').split('\n')
+    expect(resultLines).toHaveLength(100)
+    expect(resultLines[49]).toBe('const TARGET = "new"')
+    // All other lines unchanged
+    expect(resultLines[0]).toBe('line 1: original content here')
+    expect(resultLines[99]).toBe('line 100: original content here')
+  })
+
+  it('patch_github_file: throws PatchNoMatchError when old_string not found', async () => {
+    const original = 'line one\nconst Y = 5\nline three'
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'sha-abc' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: {
+        file_path: 'lib/config.ts',
+        old_string: 'const NONEXISTENT = 99',
+        new_string: 'const NONEXISTENT = 100',
+        branch: 'bot/fix',
+      },
+    }]
+    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    let fromCallIdx = 0
+    mockServiceFrom.mockImplementation(() => {
+      fromCallIdx++
+      if (fromCallIdx === 1) return planChain(actions)
+      if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
+      return { update: mockUpdate }
+    })
+
+    const { executePlanActions, PatchNoMatchError } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow(PatchNoMatchError)
+    expect(mockReposCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it('patch_github_file: throws PatchAmbiguousError when old_string matches more than once', async () => {
+    const original = 'const X = 1\nconst X = 1\nother line'
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'sha-dup' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: {
+        file_path: 'lib/dupe.ts',
+        old_string: 'const X = 1',
+        new_string: 'const X = 2',
+        branch: 'bot/fix-dupe',
+      },
+    }]
+    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    let fromCallIdx = 0
+    mockServiceFrom.mockImplementation(() => {
+      fromCallIdx++
+      if (fromCallIdx === 1) return planChain(actions)
+      if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
+      return { update: mockUpdate }
+    })
+
+    const { executePlanActions, PatchAmbiguousError } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow(PatchAmbiguousError)
+    expect(mockReposCreateOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it('patch_github_file: error message includes file path and count for ambiguous match', async () => {
+    const original = 'foo\nfoo\nbar'
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'sha-x' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: { file_path: 'src/util.ts', old_string: 'foo', new_string: 'baz', branch: 'bot/fix' },
+    }]
+    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    let fromCallIdx = 0
+    mockServiceFrom.mockImplementation(() => {
+      fromCallIdx++
+      if (fromCallIdx === 1) return planChain(actions)
+      if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
+      return { update: mockUpdate }
+    })
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('2 locations')
+  })
+
+  it('patch_github_file: error message tells bot to re-read on no-match', async () => {
+    const original = 'some content'
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'sha-y' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: { file_path: 'src/x.ts', old_string: 'missing text', new_string: 'replacement', branch: 'bot/fix' },
+    }]
+    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    let fromCallIdx = 0
+    mockServiceFrom.mockImplementation(() => {
+      fromCallIdx++
+      if (fromCallIdx === 1) return planChain(actions)
+      if (fromCallIdx === 2) return installationChain()
+      if (fromCallIdx === 3) return workspaceChain()
+      return { update: mockUpdate }
+    })
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('Read the file again')
   })
 })

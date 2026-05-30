@@ -7,7 +7,7 @@ interface GithubActionInput {
  * Server-side auto-approve allowlist.
  *
  * Returns true only when ALL of the following rules pass:
- *   1. Every action is commit_file (no PRs, issues, or comments)
+ *   1. Every action is commit_file or patch_github_file (no PRs, issues, or comments)
  *   2. At most 3 actions in the batch (prevents bulk auto-rewrites)
  *   3. Every file_path is in the safe-path whitelist:
  *      docs/, __tests__/, *.test.ts, *.test.js, *.spec.ts, *.spec.js, *.md
@@ -18,8 +18,8 @@ interface GithubActionInput {
  * plan-approval regardless of what Claude declared.
  */
 export function isAutoApprovable(actions: GithubActionInput[]): boolean {
-  // Rule 1: only commit_file (no PRs, issues, comments)
-  if (actions.some(a => a.action_type !== 'commit_file')) return false
+  // Rule 1: only commit_file or patch_github_file (no PRs, issues, comments)
+  if (actions.some(a => a.action_type !== 'commit_file' && a.action_type !== 'patch_github_file')) return false
 
   // Rule 2: max 3 files
   if (actions.length > 3) return false

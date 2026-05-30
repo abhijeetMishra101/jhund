@@ -10,8 +10,35 @@ export class ActionCapExceededError extends Error {
   }
 }
 
+export class FileAlreadyExistsError extends Error {
+  constructor(filePath: string) {
+    super(
+      `${filePath} already exists on this branch. Use patch_github_file to edit existing files — commit_file is for new files only.`
+    )
+    this.name = 'FileAlreadyExistsError'
+  }
+}
+
+export class PatchNoMatchError extends Error {
+  constructor(filePath: string) {
+    super(
+      `old_string not found in ${filePath}. Read the file again and use the exact text including whitespace and indentation.`
+    )
+    this.name = 'PatchNoMatchError'
+  }
+}
+
+export class PatchAmbiguousError extends Error {
+  constructor(filePath: string, count: number) {
+    super(
+      `old_string matches ${count} locations in ${filePath}. Provide more surrounding context to make it unique.`
+    )
+    this.name = 'PatchAmbiguousError'
+  }
+}
+
 interface GithubAction {
-  action_type: 'create_pr' | 'create_issue' | 'comment_pr' | 'comment_issue' | 'commit_file'
+  action_type: 'create_pr' | 'create_issue' | 'comment_pr' | 'comment_issue' | 'commit_file' | 'patch_github_file'
   payload: Record<string, unknown>
 }
 
@@ -103,11 +130,16 @@ export async function executePlanActions(planId: string, workspaceId: string): P
       .update({ status: 'executed', executed_at: new Date().toISOString() })
       .eq('id', planId)
   } catch (err) {
-    const githubStatus = (err as { status?: number }).status
-    const message = githubErrorMessage(githubStatus)
-    console.error('[executor] action failed status=%s message=%s err=%s', githubStatus, message, String(err))
+    // Patch/file errors carry their own descriptive messages — preserve them
+    const isOwnError = err instanceof FileAlreadyExistsError
+      || err instanceof PatchNoMatchError
+      || err instanceof PatchAmbiguousError
+    const message = isOwnError
+      ? (err as Error).message
+      : githubErrorMessage((err as { status?: number }).status)
+    console.error('[executor] action failed isOwnError=%s message=%s err=%s', isOwnError, message, String(err))
     await supabase.from('plans').update({ status: 'failed', failure_reason: message } as never).eq('id', planId)
-    throw new Error(message)
+    throw isOwnError ? err : new Error(message)
   }
 }
 
@@ -199,7 +231,7 @@ async function executeAction(
     case 'commit_file': {
       const filePath = String(p.file_path ?? 'README.md')
       const content = String(p.content ?? '')
-      const message = String(p.commit_message ?? `Update ${filePath}`)
+      const message = String(p.commit_message ?? `Add ${filePath}`)
       const branch = String(p.branch ?? defaultBranch)
 
       // Ensure the branch exists — create it from the default branch if not
@@ -215,17 +247,18 @@ async function executeAction(
         })
       }
 
-      // Get current file SHA if it exists (required by GitHub for updates)
-      let sha: string | undefined
+      // Guard: commit_file is for NEW files only. Reject if file already exists.
       try {
         const { data: existing } = await octokit.rest.repos.getContent({
           owner, repo, path: filePath, ref: branch,
         })
         if (!Array.isArray(existing) && existing.type === 'file') {
-          sha = existing.sha
+          throw new FileAlreadyExistsError(filePath)
         }
-      } catch {
-        // File doesn't exist yet — create it
+      } catch (err) {
+        // Re-throw FileAlreadyExistsError — don't swallow it
+        if (err instanceof FileAlreadyExistsError) throw err
+        // 404 = file doesn't exist yet — proceed to create
       }
 
       await octokit.rest.repos.createOrUpdateFileContents({
@@ -235,7 +268,42 @@ async function executeAction(
         message,
         content: Buffer.from(content).toString('base64'),
         branch,
-        ...(sha ? { sha } : {}),
+      })
+      break
+    }
+
+    case 'patch_github_file': {
+      const filePath = String(p.file_path ?? '')
+      const oldString = String(p.old_string ?? '')
+      const newString = String(p.new_string ?? '')
+      const branch = String(p.branch ?? defaultBranch)
+      const message = String(p.commit_message ?? `patch: update ${filePath}`)
+
+      // Fetch the current file content and SHA
+      const { data: existing } = await octokit.rest.repos.getContent({
+        owner, repo, path: filePath, ref: branch,
+      })
+      if (Array.isArray(existing) || existing.type !== 'file') {
+        throw new Error(`${filePath} is not a file`)
+      }
+      const currentContent = Buffer.from(existing.content, 'base64').toString('utf8')
+      const sha = existing.sha
+
+      // Count occurrences — must be exactly 1
+      const occurrences = currentContent.split(oldString).length - 1
+      if (occurrences === 0) throw new PatchNoMatchError(filePath)
+      if (occurrences > 1) throw new PatchAmbiguousError(filePath, occurrences)
+
+      const newContent = currentContent.replace(oldString, newString)
+
+      await octokit.rest.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: filePath,
+        message,
+        content: Buffer.from(newContent).toString('base64'),
+        sha,
+        branch,
       })
       break
     }
