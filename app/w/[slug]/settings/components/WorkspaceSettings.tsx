@@ -14,9 +14,13 @@ const WORKING_STYLES = [
   { value: 'hands-on', label: 'Hands-on', description: 'Bots ask for your input at each step before taking action' },
 ] as const
 
+const BOT_CONTEXT_MAX = 3200
+const BOT_CONTEXT_WARN = 2800
+
 export function WorkspaceSettings({ workspace, onUpdated }: Props) {
   const [name, setName] = useState(workspace.name)
   const [workingStyle, setWorkingStyle] = useState<Workspace['working_style']>(workspace.working_style)
+  const [botContext, setBotContext] = useState(workspace.bot_context ?? '')
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -28,7 +32,7 @@ export function WorkspaceSettings({ workspace, onUpdated }: Props) {
     const res = await fetch('/api/workspace/update', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), workingStyle }),
+      body: JSON.stringify({ name: name.trim(), workingStyle, botContext }),
     })
     setLoading(false)
     if (!res.ok) {
@@ -42,7 +46,10 @@ export function WorkspaceSettings({ workspace, onUpdated }: Props) {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const isDirty = name.trim() !== workspace.name || workingStyle !== workspace.working_style
+  const isDirty =
+    name.trim() !== workspace.name ||
+    workingStyle !== workspace.working_style ||
+    botContext !== (workspace.bot_context ?? '')
 
   return (
     <div>
@@ -95,6 +102,38 @@ export function WorkspaceSettings({ workspace, onUpdated }: Props) {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: '#868686' }}>
+            Project description
+          </label>
+          <p className="text-xs mb-2" style={{ color: '#5c5e63' }}>
+            Describe your project in plain English. Your team will reference this in every conversation.
+          </p>
+          <textarea
+            value={botContext}
+            onChange={(e) => setBotContext(e.target.value)}
+            maxLength={BOT_CONTEXT_MAX}
+            rows={5}
+            placeholder="e.g. We're building a SaaS for non-technical founders. The stack is Next.js 14, Supabase, and Claude. The repo is on GitHub at myorg/myrepo."
+            className="w-full px-3 py-2 rounded text-sm outline-none resize-none"
+            style={{ backgroundColor: '#27292d', color: '#d1d2d3', border: '1px solid #3d3f43' }}
+            data-testid="bot-context-input"
+          />
+          <p
+            className="text-xs text-right mt-1"
+            style={{
+              color: botContext.length >= BOT_CONTEXT_MAX
+                ? '#e05252'
+                : botContext.length >= BOT_CONTEXT_WARN
+                  ? '#d4a72c'
+                  : '#5c5e63',
+            }}
+            data-testid="bot-context-counter"
+          >
+            {botContext.length} / {BOT_CONTEXT_MAX}
+          </p>
         </div>
 
         {error && (

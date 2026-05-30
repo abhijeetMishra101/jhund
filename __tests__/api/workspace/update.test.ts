@@ -129,4 +129,71 @@ describe('PATCH /api/workspace/update', () => {
       expect(res.status).toBe(200)
     }
   })
+
+  // ── Phase 23: botContext ─────────────────────────────────────────────────
+
+  it('returns 400 when only botContext is omitted and other fields missing too', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const { PATCH } = await import('@/app/api/workspace/update/route')
+    const res = await PATCH(makeReq({}))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toMatch(/required/)
+  })
+
+  it('returns 400 when botContext exceeds 3200 chars', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const { PATCH } = await import('@/app/api/workspace/update/route')
+    const res = await PATCH(makeReq({ botContext: 'x'.repeat(3201) }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toMatch(/3200/)
+  })
+
+  it('saves botContext successfully', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const ctx = 'We build SaaS for founders. Stack: Next.js + Supabase.'
+    const updated = { id: WORKSPACE_ID, name: 'Acme', working_style: 'balanced', bot_context: ctx }
+
+    mockServiceFrom
+      .mockReturnValueOnce(userChain(WORKSPACE_ID))
+      .mockReturnValueOnce(updateChain(updated))
+
+    const { PATCH } = await import('@/app/api/workspace/update/route')
+    const res = await PATCH(makeReq({ botContext: ctx }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.workspace.bot_context).toBe(ctx)
+  })
+
+  it('saves empty botContext as null (clear)', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const updated = { id: WORKSPACE_ID, name: 'Acme', working_style: 'balanced', bot_context: null }
+
+    const chain = updateChain(updated)
+    mockServiceFrom
+      .mockReturnValueOnce(userChain(WORKSPACE_ID))
+      .mockReturnValueOnce(chain)
+
+    const { PATCH } = await import('@/app/api/workspace/update/route')
+    const res = await PATCH(makeReq({ botContext: '' }))
+    expect(res.status).toBe(200)
+    // Verify the update was called with bot_context: null
+    const updateCall = chain.update.mock.calls[0][0]
+    expect(updateCall.bot_context).toBeNull()
+  })
+
+  it('accepts botContext of exactly 3200 chars', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } })
+    const ctx = 'x'.repeat(3200)
+    const updated = { id: WORKSPACE_ID, name: 'Acme', working_style: 'balanced', bot_context: ctx }
+
+    mockServiceFrom
+      .mockReturnValueOnce(userChain(WORKSPACE_ID))
+      .mockReturnValueOnce(updateChain(updated))
+
+    const { PATCH } = await import('@/app/api/workspace/update/route')
+    const res = await PATCH(makeReq({ botContext: ctx }))
+    expect(res.status).toBe(200)
+  })
 })
