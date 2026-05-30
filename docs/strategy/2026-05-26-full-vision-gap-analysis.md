@@ -122,10 +122,12 @@ Without this, asking the Backend bot to build M2 is like hiring a developer on t
 **Concrete failure in the guinea pig test**: Backend bot proposes a Python module using Flask when M1 uses FastAPI. QA bot writes tests using unittest when the codebase uses pytest. Every bot improvises independently.
 
 **What needs to be built**:
-- Workspace context field: a free-text "About this project" that gets injected into every bot's system prompt
-- OR: a pinned `CONTEXT.md` file in GitHub that bots fetch and prepend to their context window
+- ✅ Phase 23a (shipped): `bot_context` column on `workspaces`, injected into every bot's system prompt. Settings textarea as manual override.
+- ❌ Phase 23b (gap): On GitHub repo connect, auto-read `README.md` + `package.json` and populate `bot_context` automatically. Founder does nothing. Settings textarea becomes override only.
 
-**Severity**: P0 blocker. This is the difference between a team that knows the project and strangers who just showed up.
+**PO note (2026-05-31)**: Phase 23a was framed incorrectly — use cases were written around the mechanism (founder sets text) not the outcome (bots know the project without founder effort). The manual textarea was shipped as infrastructure but is not the correct primary UX for non-technical founders. Phase 23b is the correct solution and must be prioritised alongside Phase 24.
+
+**Severity**: P0 blocker. Phase 23a ships the wiring. Phase 23b makes it zero-effort for the founder.
 
 ---
 
@@ -323,7 +325,8 @@ Phase 21            list_directory + confidence-gated auto-approve        ✅ Do
 Phase 22            patch_github_file — surgical edits, commit_file
                     restricted to new files only                          ✅ Done
 ────────────────────────────────────────────────────────────────────────────────────
-Phase 23            Workspace context — CONTEXT.md injection              0.5 session
+Phase 23a           Workspace context — bot_context column + injection     ✅ Done
+Phase 23b           Auto-derive context from GitHub repo on connect        0.5 session (slotted into Phase 24)
 Phase 24            Autonomous work loop — bots chain work without
                     founder triggering each step; stage dispatch
                     auto-starts the receiving bot                         1.5 sessions
@@ -408,15 +411,34 @@ Full vision gate    Founder states goal, team ships it                    Ongoin
 
 ---
 
-### Phase 23 — Auto-Approve
+### Phase 23a — Workspace Context (✅ Shipped PR #98)
 
-**UC-23-01** [P0]: A bot committing to any `bot/*` branch executes immediately — no plan approval modal  
-**UC-23-02** [P0]: A bot opening a PR to `main` ALWAYS shows the plan approval modal — no auto-approve exception  
-**UC-23-03** [P0]: A bot creating a GitHub issue shows the plan approval modal  
-**UC-23-04** [P0]: Auto-approved actions appear in the conversation as an immediate confirmation: "✅ Committed `docs/features/m2/stage-3-design.md` to `bot/m2-design`"  
-**UC-23-05** [P0]: Founder can see which action types are auto-approved in workspace settings  
-**UC-23-06** [P1]: Founder can disable auto-approve entirely — reverts to requiring approval for every action  
-**UC-23-07** [P1]: If an auto-approved action fails (GitHub API error), bot surfaces the failure in channel with the error detail
+**UC-23a-01** [P0]: `bot_context` column injected into every bot's system prompt on every Claude call ✅  
+**UC-23a-02** [P0]: Bot responds with project-specific details without founder repeating them ✅  
+**UC-23a-03** [P1]: Founder can set/override context in Settings textarea ✅  
+**UC-23a-04** [P1]: Character limit enforced (3200 chars) ✅  
+
+---
+
+### Phase 23b — Auto-Derive Context from GitHub (❌ Not built — slotted into Phase 24)
+
+> **PO note (2026-05-31)**: Phase 23a was planned with the wrong user outcome. Use cases were framed around the mechanism (founder types description) rather than the outcome (bots know the project without founder effort). For a non-technical founder audience, the textarea is the wrong primary path. This is a planning failure — the outcome use case should have been written first, which would have immediately surfaced auto-derive as the correct solution.
+
+**UC-23b-01** [P0]: On GitHub repo connect, `bot_context` is auto-populated by reading `README.md` + `package.json` — founder does nothing  
+**UC-23b-02** [P0]: Auto-derived context includes project name, purpose, and tech stack as stated in the README  
+**UC-23b-03** [P1]: Founder can override or augment auto-derived context in Settings  
+**UC-23b-04** [P1]: If README is missing or empty, Ops bot prompts founder in #ops with a simple template  
+
+---
+
+### Phase 23 (original) — Auto-Approve (✅ Shipped in Phase 21)
+
+> Note: the original numbering in this doc had auto-approve as Phase 23. It shipped as Phase 21. Use cases below are preserved for reference.
+
+**UC-21-01** [P0]: A bot committing to any `bot/*` branch executes immediately — no plan approval modal ✅  
+**UC-21-02** [P0]: A bot opening a PR to `main` ALWAYS shows the plan approval modal ✅  
+**UC-21-03** [P0]: Auto-approved actions appear as immediate confirmation in channel ✅  
+**UC-21-04** [P1]: If an auto-approved action fails, bot surfaces the failure in channel ✅
 
 **Total to guinea pig gate**: ~4 sessions of engineering
 **Total to full vision (P0+P1)**: ~8 sessions of engineering
