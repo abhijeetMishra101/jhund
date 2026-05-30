@@ -28,7 +28,7 @@ describe('deriveWorkspaceContext', () => {
 
   it('returns null when README is missing', async () => {
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>).mockRejectedValue(
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       Object.assign(new Error('Not Found'), { status: 404 })
     )
 
@@ -39,7 +39,7 @@ describe('deriveWorkspaceContext', () => {
 
   it('returns context string when README exists', async () => {
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(mockFile('# My Project\nThis is a test project.'))  // README
       .mockRejectedValueOnce(new Error('Not Found'))  // package.json missing
 
@@ -62,7 +62,7 @@ describe('deriveWorkspaceContext', () => {
     })
 
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(mockFile('# Jhund\nAn AI-team workspace.'))  // README
       .mockResolvedValueOnce(mockFile(pkg))  // package.json
 
@@ -76,7 +76,7 @@ describe('deriveWorkspaceContext', () => {
 
   it('works fine when package.json is missing', async () => {
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(mockFile('# My App\nA cool app.'))  // README
       .mockRejectedValueOnce(new Error('Not Found'))  // no package.json
 
@@ -91,7 +91,7 @@ describe('deriveWorkspaceContext', () => {
   it('caps output at 3000 chars', async () => {
     const longReadme = 'x'.repeat(5000)
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(mockFile(longReadme))
       .mockRejectedValueOnce(new Error('Not Found'))
 
@@ -103,7 +103,7 @@ describe('deriveWorkspaceContext', () => {
 
   it('includes repo name in output', async () => {
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(mockFile('# Test'))
       .mockRejectedValueOnce(new Error('Not Found'))
 
@@ -114,7 +114,7 @@ describe('deriveWorkspaceContext', () => {
 
   it('returns null (does not throw) on unexpected errors', async () => {
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>).mockRejectedValue(
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('Network error')
     )
 
@@ -124,7 +124,7 @@ describe('deriveWorkspaceContext', () => {
 
   it('returns context using README only when package.json contains malformed JSON', async () => {
     const octokit = makeOctokit()
-    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+    ;(octokit.rest.repos.getContent as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(mockFile('# My App\nA test app.'))  // README
       .mockResolvedValueOnce(mockFile('{ not valid json !!!'))    // malformed package.json
 

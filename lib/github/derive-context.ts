@@ -89,7 +89,9 @@ export async function deriveWorkspaceContext(
 
     const context = lines.join('\n').slice(0, MAX_CONTEXT_CHARS)
     return context
-  } catch (err) {
+  } catch (err) /* c8 ignore next */ {
+    // Defensive outer catch — inner try-catches handle all expected errors.
+    // This fires only if something truly unexpected escapes (e.g. a broken runtime).
     console.error('[derive-context] unexpected error owner=%s repo=%s err=%s', owner, repo, String(err))
     return null
   }
