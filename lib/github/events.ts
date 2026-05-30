@@ -14,6 +14,11 @@ export function summariseEvent(eventType: string, payload: Record<string, unknow
       const user = (pr?.user as Record<string, unknown>)?.login as string
       const repo = (payload.repository as Record<string, unknown>)?.name as string
 
+      // Suppress high-frequency noise actions that fire on every push to a PR branch.
+      // These do not represent meaningful state changes for bots or founders.
+      if (action === 'synchronize') return ''
+      if (action === 'edited') return ''
+
       if (action === 'opened') return `${user} opened pull request #${num} in ${repo}: "${title}"`
       if (action === 'closed') {
         const merged = pr?.merged as boolean
@@ -22,7 +27,9 @@ export function summariseEvent(eventType: string, payload: Record<string, unknow
           : `Pull request #${num} was closed without merging: "${title}"`
       }
       if (action === 'review_requested') return `Review requested on pull request #${num}: "${title}"`
-      return `Pull request #${num} ${action}: "${title}"`
+      if (action === 'reopened') return `Pull request #${num} was reopened: "${title}"`
+      // Suppress any other unrecognised PR actions rather than inserting jargon into channels
+      return ''
     }
 
     case 'issues': {

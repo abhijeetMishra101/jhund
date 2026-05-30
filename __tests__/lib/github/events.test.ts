@@ -27,9 +27,25 @@ describe('summariseEvent — pull_request', () => {
     expect(out).toContain('Review requested')
   })
 
-  it('other actions fall through to generic', () => {
+  it('synchronize → returns empty (suppressed — fires on every push, would re-trigger bots)', () => {
     const out = summariseEvent('pull_request', { action: 'synchronize', pull_request: pr, repository: repo })
-    expect(out).toContain('synchronize')
+    expect(out).toBe('')
+  })
+
+  it('edited → returns empty (suppressed — title/body edits are noise)', () => {
+    const out = summariseEvent('pull_request', { action: 'edited', pull_request: pr, repository: repo })
+    expect(out).toBe('')
+  })
+
+  it('reopened → summarised', () => {
+    const out = summariseEvent('pull_request', { action: 'reopened', pull_request: pr, repository: repo })
+    expect(out).toContain('reopened')
+    expect(out).toContain('#42')
+  })
+
+  it('unrecognised action → returns empty (no jargon in channels)', () => {
+    const out = summariseEvent('pull_request', { action: 'labeled', pull_request: pr, repository: repo })
+    expect(out).toBe('')
   })
 })
 
