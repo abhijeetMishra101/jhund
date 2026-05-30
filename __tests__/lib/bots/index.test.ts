@@ -1814,7 +1814,7 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     }
   }
 
-  it('auto-approve happy path: docs/ commit_file with confidence=auto creates plan + executes + posts system messages', async () => {
+  it('auto-approve happy path: docs/ commit_file with confidence=auto creates plan + executes, then Claude confirms', async () => {
     setupBotResolutionMocks()
     mockExecutePlanActions.mockResolvedValueOnce(undefined)
 
@@ -1826,10 +1826,7 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     mockServiceFrom.mockReturnValueOnce({ insert: plansInsertMock })
 
     // system message: "⚡ Auto-executing: ..."
-    const autoExecMsgMock = vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { id: 'auto-exec-msg' }, error: null }),
-    })
+    const autoExecMsgMock = vi.fn().mockResolvedValue({ error: null })
     mockServiceFrom.mockReturnValueOnce({ insert: autoExecMsgMock })
 
     // plans update (set status=approved)
@@ -1839,21 +1836,24 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
       }),
     })
 
-    // completion message: "Done — changes committed..."
+    // After exec result fed back, Claude returns a plain text confirmation
+    // Final bot message insert (text handler)
     const doneMsgMock = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: { id: 'done-msg-uuid' }, error: null }),
     })
     mockServiceFrom.mockReturnValueOnce({ insert: doneMsgMock })
 
-    mockMessagesCreate.mockResolvedValueOnce(
-      autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto')
-    )
+    // Claude's first response: auto-approvable action
+    // Claude's second response (after exec result): plain text confirmation
+    mockMessagesCreate
+      .mockResolvedValueOnce(autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto'))
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Done — API docs committed to GitHub.' }], stop_reason: 'end_turn' })
 
     const { respondToMessage } = await import('@/lib/bots/index')
     const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
 
-    // Returns the id of the completion message
+    // Returns the id of Claude's confirmation message
     expect(id).toBe('done-msg-uuid')
 
     // executePlanActions was called with the plan id and workspace id
@@ -1864,14 +1864,13 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     expect(planPayload.auto_approved).toBe(true)
     expect(planPayload.status).toBe('pending')
 
-    // System messages were posted
+    // ⚡ system message was posted
     const autoExecContent = (autoExecMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
     expect(autoExecContent).toContain('⚡ Auto-executing')
     expect(autoExecContent).toContain('Update API docs')
 
-    const doneContent = (doneMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
-    expect(doneContent).toContain('Done')
-    expect(doneContent).toContain('GitHub')
+    // Claude was called twice: initial + after exec result
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
   })
 
   it('auto-approve fallback: confidence=auto but action is create_pr → falls back to normal plan chip', async () => {
@@ -1996,7 +1995,7 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to create plan')
   })
 
-  it('auto-approve: throws "Failed to store completion message" when final insert fails (line 633)', async () => {
+  it('auto-approve: throws "Failed to store bot reply" when final text insert fails', async () => {
     setupBotResolutionMocks()
 
     // Plan insert succeeds
@@ -2015,7 +2014,7 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     })
     // executePlanActions succeeds
     mockExecutePlanActions.mockResolvedValueOnce(undefined)
-    // Completion message insert FAILS
+    // Final text message insert FAILS (text handler after second Claude call)
     mockServiceFrom.mockReturnValueOnce({
       insert: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnThis(),
@@ -2023,12 +2022,14 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
       }),
     })
 
-    mockMessagesCreate.mockResolvedValueOnce(
-      autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto')
-    )
+    // First Claude call: auto-approvable action
+    // Second Claude call (after exec result): plain text that fails to store
+    mockMessagesCreate
+      .mockResolvedValueOnce(autoApproveToolResponse('docs/api.md', 'bot/update-docs', 'Update API docs', 'auto'))
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Done!' }], stop_reason: 'end_turn' })
 
     const { respondToMessage } = await import('@/lib/bots/index')
-    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store completion message')
+    await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store bot reply')
   })
 })
 
@@ -2112,5 +2113,178 @@ describe('respondToMessage — workspace bot_context injection', () => {
     // Role prompt must appear before the injected context section
     expect(contextIndex).toBeGreaterThan(0)
     expect(text.indexOf('Test Workspace')).toBeLessThan(contextIndex)
+  })
+})
+
+// ── Phase 24: Autonomous work loop ──────────────────────────────────────────
+describe('respondToMessage — autonomous work loop', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+  })
+
+  function autoInlineResponse(description = 'Commit spec doc', branch = 'bot/feature', id = 'tool-auto-1') {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id,
+          name: 'propose_github_action',
+          input: {
+            plain_english_description: description,
+            confidence: 'auto',
+            actions: [{ action_type: 'commit_file', payload: { file_path: 'docs/spec.md', content: '# Spec', commit_message: 'add spec', branch } }],
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  function planChipResponse(description = 'Open PR to main') {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-pr',
+          name: 'propose_github_action',
+          input: {
+            plain_english_description: description,
+            confidence: 'review',
+            actions: [{ action_type: 'create_pr', payload: { title: 'My PR', head_branch: 'bot/feature', base_branch: 'main', body: 'description' } }],
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  function plansMockChain(planId = 'plan-loop-1') {
+    return {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: planId }, error: null }),
+      }),
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+    }
+  }
+
+  function systemMsgChain() {
+    return { insert: vi.fn().mockResolvedValue({ data: { id: 'sys-msg' }, error: null }) }
+  }
+
+  function completionMsgChain(id = 'done-msg') {
+    return {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id }, error: null }),
+      }),
+    }
+  }
+
+  it('chains two auto-approved commits before stopping at plain text', async () => {
+    setupBotResolutionMocks()
+    mockExecutePlanActions.mockResolvedValue(undefined)
+
+    // First response: auto-approvable commit_file
+    mockMessagesCreate
+      .mockResolvedValueOnce(autoInlineResponse('Commit spec', 'bot/feat', 'tool-1'))
+      // Second response (after first exec result fed back): another auto-approvable commit
+      .mockResolvedValueOnce(autoInlineResponse('Commit impl', 'bot/feat', 'tool-2'))
+      // Third response: plain text — bot is done
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'All done! Two files committed.' }], stop_reason: 'end_turn' })
+
+    // Plans chain for first inline action
+    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-1'))   // plans insert
+    mockServiceFrom.mockReturnValueOnce(systemMsgChain())            // ⚡ system msg
+    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() }) // plans update approved
+
+    // Plans chain for second inline action
+    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-2'))
+    mockServiceFrom.mockReturnValueOnce(systemMsgChain())
+    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() })
+
+    // Final bot message insert
+    mockServiceFrom.mockReturnValueOnce(completionMsgChain('final-msg'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('final-msg')
+    // Claude was called 3 times: initial + after first exec + after second exec
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(3)
+    // executePlanActions called twice (once per inline action)
+    expect(mockExecutePlanActions).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops at create_pr and creates a plan chip (founder gate preserved)', async () => {
+    setupBotResolutionMocks()
+    mockExecutePlanActions.mockResolvedValue(undefined)
+
+    // First response: auto-approvable commit
+    mockMessagesCreate
+      .mockResolvedValueOnce(autoInlineResponse('Commit spec', 'bot/feat', 'tool-1'))
+      // Second response: create_pr — must NOT be auto-executed, must create plan chip
+      .mockResolvedValueOnce(planChipResponse('Open PR to main'))
+
+    // Plans chain for first inline action
+    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-1'))
+    mockServiceFrom.mockReturnValueOnce(systemMsgChain())
+    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() })
+
+    // Plan chip: plans insert + bot message insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'pr-plan' }, error: null }),
+      }),
+    })
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'pr-msg' }, error: null }),
+      }),
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('pr-msg')
+    // executePlanActions called ONCE (for the commit), NOT for create_pr
+    expect(mockExecutePlanActions).toHaveBeenCalledTimes(1)
+    // Claude called twice
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it('handles inline exec failure gracefully — feeds error back to Claude', async () => {
+    setupBotResolutionMocks()
+    mockExecutePlanActions.mockRejectedValueOnce(new Error('Branch not found'))
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(autoInlineResponse('Commit spec', 'bot/feat', 'tool-1'))
+      // Claude receives the error and responds with a plain text message
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Sorry, I hit an error. Let me try a different approach.' }], stop_reason: 'end_turn' })
+
+    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-err'))
+    mockServiceFrom.mockReturnValueOnce(systemMsgChain())
+    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() })
+    mockServiceFrom.mockReturnValueOnce(completionMsgChain('err-reply'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('err-reply')
+    // Claude was called twice (once initial, once after error result)
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+    // The error was fed back — verify the second Claude call included the error in messages
+    const secondCall = mockMessagesCreate.mock.calls[1]?.[0] as Record<string, unknown>
+    const msgs = secondCall.messages as Array<{ role: string; content: unknown }>
+    // Find the user message that contains tool_result (not the original "open an issue please")
+    const toolResultMsg = msgs.find(
+      (m) => m.role === 'user' && Array.isArray(m.content) &&
+        (m.content as Array<{ type: string }>).some((c) => c.type === 'tool_result')
+    )
+    expect(JSON.stringify(toolResultMsg)).toContain('Branch not found')
   })
 })

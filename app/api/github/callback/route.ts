@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getInstallationOctokit } from '@/lib/github/auth'
 import { seedDefaultTriggers } from '@/lib/github/triggers'
+import { deriveWorkspaceContext } from '@/lib/github/derive-context'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -62,6 +63,27 @@ export async function GET(request: Request) {
 
     // Seed default trigger routing rules based on workspace template
     await seedDefaultTriggers(userRow.workspace_id)
+
+    // Auto-derive workspace context from README + package.json — only if not already set
+    // (preserves any description the founder typed in Settings)
+    if (repoFullName && repoFullName !== 'pending') {
+      const [owner, repo] = repoFullName.split('/')
+      const { data: ws } = await serviceClient
+        .from('workspaces')
+        .select('bot_context')
+        .eq('id', userRow.workspace_id)
+        .single()
+
+      if (!ws?.bot_context) {
+        const context = await deriveWorkspaceContext(octokit, owner, repo)
+        if (context) {
+          await serviceClient
+            .from('workspaces')
+            .update({ bot_context: context })
+            .eq('id', userRow.workspace_id)
+        }
+      }
+    }
 
     // Get workspace slug for redirect
     const { data: workspace } = await serviceClient

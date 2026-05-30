@@ -150,8 +150,18 @@ export async function respondToMessage(
     ? `${basePrompt}\n\n## Project Context\n${botContext}`
     : basePrompt
 
-  // 4. Call Claude with cached system prompt + tools, with read loop for read_github_file
-  const MAX_READ_ITERATIONS = 5
+  // 4. Call Claude with cached system prompt + tools.
+  //
+  // WORK LOOP — handles two kinds of iterations:
+  //   (a) File reads: read_github_file / list_directory resolved inline (existing behaviour)
+  //   (b) Auto-approvable actions: commit_file / patch_github_file on bot/* branches
+  //       executed inline and result fed back so Claude can continue working.
+  //
+  // Exits when Claude returns: a non-auto action (plan chip), advance_feature_stage,
+  // create_feature, record_decision, document_discussion, plain text, or cap reached.
+  //
+  // MAX_WORK_ITERATIONS covers both reads and action steps combined.
+  const MAX_WORK_ITERATIONS = 10
   const tools = [READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL]
   const system = [
     {
@@ -161,7 +171,7 @@ export async function respondToMessage(
     },
   ]
 
-  // Mutable messages array so we can append tool_results for read_github_file
+  // Mutable messages array so we can append tool_results
   const messages = [...messageHistory]
 
   let response = await anthropic.messages.create({
@@ -172,85 +182,160 @@ export async function respondToMessage(
     messages,
   })
 
-  // Read loop — intercept read_github_file tool calls and resolve them immediately.
-  // Claude may call multiple read_github_file tools in parallel in a single response.
-  // We must provide tool_result blocks for EVERY tool_use in the response — missing
-  // any one causes a 400 "tool_use ids without tool_result blocks" error from the API.
-  // Runs up to MAX_READ_ITERATIONS times; breaks when there are no read_github_file
-  // calls in the response (Claude called another tool or returned text).
-  for (let iteration = 0; iteration < MAX_READ_ITERATIONS; iteration++) {
-    // Collect ALL read_github_file and list_directory tool_use blocks from this response (parallel reads)
+  for (let iteration = 0; iteration < MAX_WORK_ITERATIONS; iteration++) {
+    // ── (a) File reads ────────────────────────────────────────────────────────
+    // Collect ALL read_github_file and list_directory tool_use blocks (parallel reads).
+    // We must provide tool_result blocks for EVERY tool_use in the response — missing
+    // any one causes a 400 "tool_use ids without tool_result blocks" error from the API.
     const readBlocks = response.content.filter(
       (b) => b.type === 'tool_use' &&
         ((b as Anthropic.ToolUseBlock).name === 'read_github_file' ||
          (b as Anthropic.ToolUseBlock).name === 'list_directory')
     ) as Anthropic.ToolUseBlock[]
 
-    if (readBlocks.length === 0) break // Claude called another tool or returned text — hand off
+    if (readBlocks.length > 0) {
+      const toolResults = await Promise.all(
+        readBlocks.map(async (readBlock) => {
+          const input = readBlock.input as { path: string; branch?: string }
+          let content: string
 
-    // Resolve all file reads and directory listings in parallel, one tool_result per tool_use block
-    const toolResults = await Promise.all(
-      readBlocks.map(async (readBlock) => {
-        const input = readBlock.input as { path: string; branch?: string }
-        let content: string
-
-        if (readBlock.name === 'list_directory') {
-          try {
-            const result = await listDirectory(workspaceId, input.path, input.branch)
-            content = JSON.stringify(result)
-          } catch (err) {
-            if (err instanceof DirectoryNotFoundError) {
-              content = `Directory not found: ${input.path}`
-            } else if (err instanceof DirectoryAccessDeniedError) {
-              content = `Access denied: ${input.path}`
-            } else {
-              const message = err instanceof Error ? err.message : 'Unknown error'
-              content = `Error listing ${input.path}: ${message}`
+          if (readBlock.name === 'list_directory') {
+            try {
+              const result = await listDirectory(workspaceId, input.path, input.branch)
+              content = JSON.stringify(result)
+            } catch (err) {
+              if (err instanceof DirectoryNotFoundError) {
+                content = `Directory not found: ${input.path}`
+              } else if (err instanceof DirectoryAccessDeniedError) {
+                content = `Access denied: ${input.path}`
+              } else {
+                const message = err instanceof Error ? err.message : 'Unknown error'
+                content = `Error listing ${input.path}: ${message}`
+              }
+            }
+          } else {
+            try {
+              const result = await readGithubFile(workspaceId, input.path, input.branch)
+              content = result.content
+            } catch (err) {
+              if (err instanceof FileNotFoundError) {
+                content = `File not found: ${input.path}`
+              } else if (err instanceof FileAccessDeniedError) {
+                content = `Access denied: ${input.path}`
+              } else {
+                const message = err instanceof Error ? err.message : 'Unknown error'
+                content = `Error reading ${input.path}: ${message}`
+              }
             }
           }
-        } else {
-          try {
-            const result = await readGithubFile(workspaceId, input.path, input.branch)
-            content = result.content
-          } catch (err) {
-            if (err instanceof FileNotFoundError) {
-              content = `File not found: ${input.path}`
-            } else if (err instanceof FileAccessDeniedError) {
-              content = `Access denied: ${input.path}`
-            } else {
-              const message = err instanceof Error ? err.message : 'Unknown error'
-              content = `Error reading ${input.path}: ${message}`
-            }
-          }
+
+          return { type: 'tool_result' as const, tool_use_id: readBlock.id, content }
+        })
+      )
+
+      messages.push(
+        { role: 'assistant' as const, content: response.content },
+        { role: 'user' as const, content: toolResults }
+      )
+
+      response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        tools,
+        system,
+        messages,
+      })
+      continue
+    }
+
+    // ── (b) Auto-approvable GitHub actions ────────────────────────────────────
+    // If Claude called propose_github_action with confidence='auto' and the
+    // server-side allowlist passes, execute inline and feed the result back.
+    // This lets bots chain: read → commit → patch → commit → … → create_pr (stops here).
+    const proposeBlock = response.content.find(
+      (b) => b.type === 'tool_use' && (b as Anthropic.ToolUseBlock).name === 'propose_github_action'
+    ) as Anthropic.ToolUseBlock | undefined
+
+    if (proposeBlock) {
+      const input = proposeBlock.input as {
+        plain_english_description: string
+        actions: Array<{ action_type: string; payload: Record<string, unknown> }>
+        confidence?: 'auto' | 'review'
+      }
+
+      const actionsRaw = input.actions
+      const actions: Array<{ action_type: string; payload: Record<string, unknown> }> =
+        Array.isArray(actionsRaw) ? actionsRaw : actionsRaw ? [actionsRaw as never] : []
+
+      if (input.confidence === 'auto' && isAutoApprovable(actions) && actions.length > 0) {
+        // Execute the actions inline
+        const { data: plan, error: planError } = await supabase
+          .from('plans')
+          .insert({
+            channel_id: channelId,
+            bot_role_id: botRole.id,
+            description_md: input.plain_english_description,
+            github_actions: actions as unknown as import('@/lib/supabase/types').Json,
+            status: 'pending',
+            auto_approved: true,
+          } as never)
+          .select('id')
+          .single()
+
+        if (planError || !plan) {
+          throw new Error(`Failed to create plan: ${planError?.message ?? 'no data'}`)
         }
 
-        return { type: 'tool_result' as const, tool_use_id: readBlock.id, content }
-      })
-    )
+        // Post visible system message so founder can see what's happening
+        await supabase.from('messages').insert({
+          channel_id: channelId,
+          author_type: 'system',
+          author_id: workspaceId,
+          content: `⚡ Auto-executing: ${input.plain_english_description}`,
+          ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+        })
 
-    // Append the assistant's full turn (all tool_use blocks) + results for every block.
-    // The API requires a 1-to-1 correspondence between tool_use and tool_result.
-    messages.push(
-      { role: 'assistant' as const, content: response.content },
-      { role: 'user' as const, content: toolResults }
-    )
+        await supabase
+          .from('plans')
+          .update({ status: 'approved', approved_at: new Date().toISOString() } as never)
+          .eq('id', plan.id)
 
-    // Call Claude again with all file contents in context
-    response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      tools,
-      system,
-      messages,
-    })
+        let execResult: string
+        try {
+          await executePlanActions(plan.id, workspaceId)
+          execResult = `✅ Done: ${input.plain_english_description}\nActions completed: ${actions.map((a) => a.action_type).join(', ')}`
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unknown error'
+          execResult = `❌ Failed: ${msg}. You may need to adjust your approach.`
+        }
+
+        // Feed result back to Claude so it can plan the next step
+        messages.push(
+          { role: 'assistant' as const, content: response.content },
+          { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: proposeBlock.id, content: execResult }] }
+        )
+
+        response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 4096,
+          tools,
+          system,
+          messages,
+        })
+        continue
+      }
+    }
+
+    // ── Neither reads nor inline actions — hand off to outer handler ──────────
+    break
   }
 
-  // 5. Check if Claude used a tool (in the final response from the read loop)
+  // 5. Check if Claude used a tool (in the final response from the work loop)
   const toolUseBlock = response.content.find((b) => b.type === 'tool_use') as
     | Anthropic.ToolUseBlock
     | undefined
 
-  // Guard: if we exhausted MAX_READ_ITERATIONS and Claude still wants to read/list, surface a friendly message.
+  // Guard: if we exhausted MAX_WORK_ITERATIONS and Claude still wants to read/list, surface a friendly message.
   if (toolUseBlock?.name === 'read_github_file' || toolUseBlock?.name === 'list_directory') {
     const { data: stored } = await supabase.from('messages').insert({
       channel_id: channelId,
