@@ -149,6 +149,68 @@ describe('isAutoApprovable', () => {
     ).toBe(false)
   })
 
+  // ── patch_github_file support ────────────────────────────────────────────────
+
+  it('returns true for patch_github_file on docs/ path on bot/ branch', () => {
+    expect(
+      isAutoApprovable([{
+        action_type: 'patch_github_file',
+        payload: { file_path: 'docs/api.md', old_string: 'old', new_string: 'new', branch: 'bot/update-docs' },
+      }])
+    ).toBe(true)
+  })
+
+  it('returns true for patch_github_file on __tests__/ path on bot/ branch', () => {
+    expect(
+      isAutoApprovable([{
+        action_type: 'patch_github_file',
+        payload: { file_path: '__tests__/lib/bots/index.test.ts', old_string: 'x', new_string: 'y', branch: 'bot/fix-test' },
+      }])
+    ).toBe(true)
+  })
+
+  it('returns false for patch_github_file on lib/ path (not whitelisted)', () => {
+    expect(
+      isAutoApprovable([{
+        action_type: 'patch_github_file',
+        payload: { file_path: 'lib/bots/index.ts', old_string: 'x', new_string: 'y', branch: 'bot/fix' },
+      }])
+    ).toBe(false)
+  })
+
+  it('returns false for patch_github_file on non-bot/ branch', () => {
+    expect(
+      isAutoApprovable([{
+        action_type: 'patch_github_file',
+        payload: { file_path: 'docs/api.md', old_string: 'x', new_string: 'y', branch: 'main' },
+      }])
+    ).toBe(false)
+  })
+
+  it('returns true for mixed commit_file (new) + patch_github_file (edit) both on safe paths', () => {
+    expect(
+      isAutoApprovable([
+        commitFile('docs/new-doc.md', 'bot/docs'),
+        {
+          action_type: 'patch_github_file',
+          payload: { file_path: 'docs/existing.md', old_string: 'old section', new_string: 'new section', branch: 'bot/docs' },
+        },
+      ])
+    ).toBe(true)
+  })
+
+  it('returns false for patch_github_file mixed with create_pr', () => {
+    expect(
+      isAutoApprovable([
+        {
+          action_type: 'patch_github_file',
+          payload: { file_path: 'docs/api.md', old_string: 'x', new_string: 'y', branch: 'bot/docs' },
+        },
+        { action_type: 'create_pr', payload: { title: 'PR', body: '', head_branch: 'bot/docs', base_branch: 'main' } },
+      ])
+    ).toBe(false)
+  })
+
   // ── Edge cases ────────────────────────────────────────────────────────────────
 
   it('returns false for empty actions array', () => {

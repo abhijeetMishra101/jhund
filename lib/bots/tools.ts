@@ -71,20 +71,23 @@ export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
           properties: {
             action_type: {
               type: 'string',
-              enum: ['commit_file', 'create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
+              enum: ['commit_file', 'patch_github_file', 'create_pr', 'create_issue', 'comment_pr', 'comment_issue'],
             },
             payload: {
               type: 'object',
               description:
                 'Fields per action_type:\n' +
-                '- commit_file: { file_path, content, commit_message, branch } — branch must be like "bot/describe-change"\n' +
-                '- create_pr: { title, body, head_branch, base_branch } — head_branch must match the branch from commit_file\n' +
+                '- commit_file: { file_path, content, commit_message, branch } — NEW files only. Branch must be like "bot/describe-change". Do NOT use for editing existing files.\n' +
+                '- patch_github_file: { file_path, old_string, new_string, branch, commit_message } — EDIT existing files. old_string must match exactly once in the file.\n' +
+                '- create_pr: { title, body, head_branch, base_branch } — head_branch must match the branch from commit_file or patch_github_file\n' +
                 '- create_issue: { title, body, labels[] }\n' +
                 '- comment_pr: { pr_number, body }\n' +
                 '- comment_issue: { issue_number, body }',
               properties: {
                 file_path: { type: 'string' },
                 content: { type: 'string' },
+                old_string: { type: 'string' },
+                new_string: { type: 'string' },
                 commit_message: { type: 'string' },
                 branch: { type: 'string' },
                 head_branch: { type: 'string' },
@@ -105,7 +108,7 @@ export const PROPOSE_GITHUB_ACTION_TOOL: Anthropic.Tool = {
         enum: ['auto', 'review'],
         description:
           '"auto" — low-risk change, can execute without founder approval. ' +
-          'Only use "auto" when ALL of: (1) every action is commit_file only, ' +
+          'Only use "auto" when ALL of: (1) every action is commit_file or patch_github_file only, ' +
           '(2) every file path is in docs/, __tests__/, or matches *.test.ts/*.test.js/*.spec.ts/*.md, ' +
           '(3) branch starts with "bot/". ' +
           '"review" — default, requires founder approval.',
