@@ -108,4 +108,4 @@ No DB migrations required. This is a purely code-level change.
 - [ ] No regression on existing `commit_file` new-file creation
 
 **PO sign-off date**: 2026-05-30
-**Notes**:
+**Notes**: patch_github_file implemented in lib/github/executor.ts — no DB migrations required. Smoke Tests E and F passed 2026-05-30.
