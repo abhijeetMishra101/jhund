@@ -33,14 +33,15 @@ without being Indian-coded globally.
 - Separate repo from `fashion-trend-pipeline`
 - Built using thepopebot as the development environment
 - Product Owner + Architect roles first, then build
-- Fashion Trend Pipeline is the first guinea pig to run on Clan
+- **Product target (updated 2026-05-30)**: Jhund builds Jhund. The Jhund workspace is connected to the `abhijeetMishra101/jhund` repo. The Guinea Pig Gate is: founder specs a feature in `#product`, sits back, and the team ships it autonomously — PR ready for founder review with no hand-holding required.
 
-## Immediate Next Steps
-1. Install thepopebot locally
-2. Configure Product Owner role → validate business idea, ICP, monetisation
-3. Configure Architect role → tech stack, MVP scope, system design
-4. Build Clan
-5. Migrate fashion project to run on Clan as first guinea pig
+## Current Phase
+Phases 20–22 shipped. Building toward Guinea Pig Gate via:
+- Phase 23: Workspace Context
+- Phase 24: Autonomous work loop
+- Phase 25: Bot-to-bot messaging
+- Phase 26: Escalation + founder notification
+See `docs/strategy/2026-05-26-full-vision-gap-analysis.md` for full phase sequence.
 
 ## Roles (to configure in thepopebot)
 
@@ -81,8 +82,6 @@ Employee directory. Routes founder to right teammate. Maintains
 team templates. Greets new users on onboarding.
 
 ## Guinea Pig Project
-`~/Developer/fashion-trend-pipeline` — an AI fashion pipeline with
-6 modules (M1 done, M2–M6 pending). Will be migrated to run inside
-Clan once the product is live. Its roles (Architect, Backend, ML,
-Security, Test, Product) are already defined as Claude Code slash
-commands in that repo.
+**Jhund builds Jhund** — the product target is for the Jhund AI team to autonomously build Jhund's own next feature. The Jhund workspace is already connected to `abhijeetMishra101/jhund`. Once Phases 23–26 are complete, the founder specs a feature, hands off, and gets a PR notification when it's done.
+
+The fashion trend pipeline (`~/Developer/fashion-trend-pipeline`) remains a secondary validation target but is no longer the primary guinea pig.
