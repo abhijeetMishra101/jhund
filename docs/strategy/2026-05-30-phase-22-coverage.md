@@ -107,5 +107,5 @@ No DB migrations required. This is a purely code-level change.
 - [ ] PR #93 failure mode is provably impossible (test covers the exact scenario)
 - [ ] No regression on existing `commit_file` new-file creation
 
-**PO sign-off date**: ________________
-**Notes**:
+**PO sign-off date**: 2026-05-30
+**Notes**: patch_github_file implemented in lib/github/executor.ts — no DB migrations required. Smoke Tests E and F passed 2026-05-30.
