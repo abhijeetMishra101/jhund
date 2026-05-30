@@ -161,7 +161,7 @@ export async function respondToMessage(
 
   let response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
+    max_tokens: 4096,
     tools,
     system,
     messages,
@@ -233,7 +233,7 @@ export async function respondToMessage(
     // Call Claude again with all file contents in context
     response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 4096,
       tools,
       system,
       messages,
