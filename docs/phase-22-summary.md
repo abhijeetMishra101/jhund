@@ -1,0 +1,3 @@
+# Phase 22 Summary
+
+Phase 22 introduced the `patch_github_file` action for making surgical edits to existing files — supplying an `old_string` and `new_string` so only the targeted lines change, leaving everything else untouched. Alongside this, `commit_file` was formally restricted to creating **new** files only; using it on an existing file is now explicitly prohibited in the tool description. This change was necessary following the PR #93 incident, in which an attempt to edit an existing file via `commit_file` caused the branch or file to become unreachable on GitHub, blocking the executor and requiring manual recovery. Together these two rules make the distinction between creating and editing impossible to miss, preventing the same class of error from recurring.
