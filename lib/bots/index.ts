@@ -137,13 +137,18 @@ export async function respondToMessage(
   // on deploy without re-seeding or migrations.
   const { data: workspaceRow } = await supabase
     .from('workspaces')
-    .select('name')
+    .select('name, bot_context')
     .eq('id', workspaceId)
     .single()
 
-  const systemPromptText = workspaceRow?.name
+  const basePrompt = workspaceRow?.name
     ? getRoleSystemPrompt(botRole.role_key, workspaceRow.name)
     : botRole.system_prompt // fallback: should never happen in practice
+
+  const botContext = workspaceRow?.bot_context?.trim()
+  const systemPromptText = botContext
+    ? `${basePrompt}\n\n## Project Context\n${botContext}`
+    : basePrompt
 
   // 4. Call Claude with cached system prompt + tools, with read loop for read_github_file
   const MAX_READ_ITERATIONS = 5

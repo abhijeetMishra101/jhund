@@ -36,6 +36,7 @@ export type Database = {
           action_cap: number
           actions_used: number
           working_style: 'hands-off' | 'balanced' | 'hands-on'
+          bot_context: string | null
           github_installation_id: string | null
           github_repo: string | null
           last_standup_at: string | null
@@ -50,6 +51,7 @@ export type Database = {
           action_cap?: number
           actions_used?: number
           working_style?: 'hands-off' | 'balanced' | 'hands-on'
+          bot_context?: string | null
           github_installation_id?: string | null
           github_repo?: string | null
           last_standup_at?: string | null
@@ -64,6 +66,7 @@ export type Database = {
           action_cap?: number
           actions_used?: number
           working_style?: 'hands-off' | 'balanced' | 'hands-on'
+          bot_context?: string | null
           github_installation_id?: string | null
           github_repo?: string | null
           last_standup_at?: string | null

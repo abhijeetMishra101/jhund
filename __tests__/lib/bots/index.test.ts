@@ -133,11 +133,14 @@ function toolUseResponse(actionType: string, payload: Record<string, unknown>, d
  * Standard bot-resolution mocks for `resolveBotForMessage` + workspace name lookup:
  *   1. channel_members: .select().eq().order() → [{ bot_role_id, is_primary }]
  *   2. bot_roles:       .select().in()         → [BOT_ROLE]
- *   3. workspaces:      .select().eq().single() → { name: 'Test Workspace' }
- *      (needed because respondToMessage now fetches workspace name to generate
+ *   3. workspaces:      .select().eq().single() → { name: 'Test Workspace', bot_context }
+ *      (needed because respondToMessage now fetches workspace name + bot_context to generate
  *       system prompt fresh from roles.ts instead of using the stale DB value)
  */
-function setupBotResolutionMocks(memberRows = [{ bot_role_id: BOT_ROLE.id, is_primary: true }]) {
+function setupBotResolutionMocks(
+  memberRows = [{ bot_role_id: BOT_ROLE.id, is_primary: true }],
+  botContext: string | null = null
+) {
   // channel_members chain
   mockServiceFrom.mockReturnValueOnce({
     select: vi.fn().mockReturnThis(),
@@ -149,11 +152,11 @@ function setupBotResolutionMocks(memberRows = [{ bot_role_id: BOT_ROLE.id, is_pr
     select: vi.fn().mockReturnThis(),
     in: vi.fn().mockResolvedValue({ data: memberRows.length > 0 ? [BOT_ROLE] : [], error: null }),
   })
-  // workspaces chain — name used to generate system prompt from roles.ts
+  // workspaces chain — name + bot_context used to generate system prompt from roles.ts
   mockServiceFrom.mockReturnValueOnce({
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({ data: { name: 'Test Workspace' }, error: null }),
+    single: vi.fn().mockResolvedValue({ data: { name: 'Test Workspace', bot_context: botContext }, error: null }),
   })
 }
 
@@ -2026,5 +2029,88 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
 
     const { respondToMessage } = await import('@/lib/bots/index')
     await expect(respondToMessage(CHANNEL_ID, WORKSPACE_ID)).rejects.toThrow('Failed to store completion message')
+  })
+})
+
+// ── Phase 23: Workspace Context injection ───────────────────────────────────
+describe('respondToMessage — workspace bot_context injection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+  })
+
+  it('injects bot_context into the system prompt when set', async () => {
+    const ctx = 'This is Jhund. Stack: Next.js 14 + Supabase.'
+    setupBotResolutionMocks(undefined, ctx)
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-1'))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Got it.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    const callArgs = mockMessagesCreate.mock.calls[0]?.[0] as Record<string, unknown>
+    const systemBlocks = callArgs.system as Array<{ text: string }>
+    expect(systemBlocks[0].text).toContain('## Project Context')
+    expect(systemBlocks[0].text).toContain(ctx)
+  })
+
+  it('does not inject Project Context section when bot_context is null', async () => {
+    setupBotResolutionMocks(undefined, null)
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-2'))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Got it.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    const callArgs = mockMessagesCreate.mock.calls[0]?.[0] as Record<string, unknown>
+    const systemBlocks = callArgs.system as Array<{ text: string }>
+    expect(systemBlocks[0].text).not.toContain('## Project Context')
+  })
+
+  it('does not inject Project Context section when bot_context is empty string', async () => {
+    setupBotResolutionMocks(undefined, '')
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-3'))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Got it.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    const callArgs = mockMessagesCreate.mock.calls[0]?.[0] as Record<string, unknown>
+    const systemBlocks = callArgs.system as Array<{ text: string }>
+    expect(systemBlocks[0].text).not.toContain('## Project Context')
+  })
+
+  it('appends context after role instructions (role prompt comes first)', async () => {
+    const ctx = 'Repo: myorg/myrepo'
+    setupBotResolutionMocks(undefined, ctx)
+    mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-4'))
+
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'OK.' }],
+      stop_reason: 'end_turn',
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    const callArgs = mockMessagesCreate.mock.calls[0]?.[0] as Record<string, unknown>
+    const systemBlocks = callArgs.system as Array<{ text: string }>
+    const text = systemBlocks[0].text
+    const contextIndex = text.indexOf('## Project Context')
+    // Role prompt must appear before the injected context section
+    expect(contextIndex).toBeGreaterThan(0)
+    expect(text.indexOf('Test Workspace')).toBeLessThan(contextIndex)
   })
 })
