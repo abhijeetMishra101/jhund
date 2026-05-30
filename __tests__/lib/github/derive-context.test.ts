@@ -121,4 +121,19 @@ describe('deriveWorkspaceContext', () => {
     const { deriveWorkspaceContext } = await import('@/lib/github/derive-context')
     await expect(deriveWorkspaceContext(octokit, 'owner', 'repo')).resolves.toBeNull()
   })
+
+  it('returns context using README only when package.json contains malformed JSON', async () => {
+    const octokit = makeOctokit()
+    ;(octokit.rest.repos.getContent as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(mockFile('# My App\nA test app.'))  // README
+      .mockResolvedValueOnce(mockFile('{ not valid json !!!'))    // malformed package.json
+
+    const { deriveWorkspaceContext } = await import('@/lib/github/derive-context')
+    const result = await deriveWorkspaceContext(octokit, 'owner', 'repo')
+    expect(result).not.toBeNull()
+    expect(result).toContain('My App')
+    // Falls back to repo name since package.json parse failed
+    expect(result).toContain('Project: repo')
+    // Does not throw
+  })
 })

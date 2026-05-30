@@ -1604,30 +1604,53 @@ describe('respondToMessage — read_github_file tool_use', () => {
     expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
   })
 
-  it('loop caps at MAX_READ_ITERATIONS (5) without infinite loop — breaks and stores final text response', async () => {
+  it('loop caps at MAX_WORK_ITERATIONS (10) without infinite loop — breaks when Claude switches to text', async () => {
     setupBotResolutionMocks()
     mockServiceFrom.mockReturnValueOnce(messagesInsertChain('msg-cap'))
 
     // readGithubFile always succeeds
     mockReadGithubFile.mockResolvedValue({ content: 'some content', sha: 'sha', truncated: false })
 
-    // Claude returns read_github_file 5 times, then returns text on 6th call
+    // Claude returns read_github_file 5 times, then returns text (loop exits well within the cap)
     for (let i = 0; i < 5; i++) {
       mockMessagesCreate.mockResolvedValueOnce(readFileToolResponse(`src/file${i}.py`, undefined, `tool-${i}`))
     }
-    // 6th call (after loop exits at MAX_READ_ITERATIONS) — this is the call made on the last iteration
-    // Actually the loop runs up to 5 iterations; on the 5th the loop increments to 5 and exits.
-    // The 6th mockMessagesCreate should be the final stored text.
     mockMessagesCreate.mockResolvedValueOnce(textResponse('I read 5 files.'))
 
     const { respondToMessage } = await import('@/lib/bots/index')
     const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
 
     expect(id).toBe('msg-cap')
-    // readGithubFile called at most 5 times (cap)
     expect(mockReadGithubFile).toHaveBeenCalledTimes(5)
-    // Total Claude calls: 6 (1 initial + 5 in loop, last one returns text which exits loop)
+    // Total Claude calls: 6 (1 initial + 5 in loop, last one returns text which breaks loop)
     expect(mockMessagesCreate).toHaveBeenCalledTimes(6)
+  })
+
+  it('cap-hit guard: surfaces friendly message when Claude still wants to read after MAX_WORK_ITERATIONS', async () => {
+    setupBotResolutionMocks()
+
+    // cap-hit system message insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'cap-hit-msg' }, error: null }),
+      }),
+    })
+
+    // readGithubFile always succeeds
+    mockReadGithubFile.mockResolvedValue({ content: 'file content', sha: 'sha', truncated: false })
+
+    // Claude ALWAYS returns read_github_file — 11 calls (1 initial + 10 loop iterations)
+    mockMessagesCreate.mockResolvedValue(readFileToolResponse('src/file.py', undefined, 'tool-read'))
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('cap-hit-msg')
+    // Claude called 11 times (1 initial + 10 loop iterations)
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(11)
+    // readGithubFile called 10 times (once per loop iteration)
+    expect(mockReadGithubFile).toHaveBeenCalledTimes(10)
   })
 })
 
