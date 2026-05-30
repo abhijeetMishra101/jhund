@@ -12,7 +12,9 @@ The full vision is not "bots that answer questions." It is this:
 
 > The founder states a goal. The AI team picks it up, coordinates internally, produces real deliverables, ships code to GitHub, and reports back — without the founder managing each step. The founder's job is to steer and approve, not to supervise.
 
-The guinea pig test makes this concrete: take the fashion pipeline (M1 done, M2–M6 pending), put it inside Jhund, and have the AI team build M2 through M6 with the founder doing as little hand-holding as possible.
+The guinea pig test makes this concrete: **Jhund builds Jhund.** The Jhund workspace is already connected to the `abhijeetMishra101/jhund` GitHub repo. The AI team should be able to build the next Jhund feature (e.g. Phase 23 — Workspace Context) with the founder specifying it in `#product` and sitting back until the PR is ready to merge.
+
+> **Updated 2026-05-30**: Original guinea pig was the fashion pipeline (M2–M6). Revised — the fashion pipeline was a proxy for dogfooding. The real and more powerful test is Jhund building its own next feature autonomously. The fashion pipeline remains a valid secondary validation but is no longer the primary gate.
 
 Everything below is measured against that standard.
 
