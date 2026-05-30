@@ -310,27 +310,38 @@ That is not "self-sustaining AI team." That is expensive chat.
 
 ## Phase Sequence to Guinea Pig Gate
 
+> **Updated 2026-05-30** — Original gate position was after Phase 23 (auto-approve). Revised after founder clarified the vision: founder should be able to hand off after PO sign-off and sit back while the team ships autonomously. That requires bot autonomy + inter-bot communication, not just auto-approve. Gate moved to after Phase 26.
+
 ```
-Phase 18 remaining  SMTP (18-C) + channel_members seed (18-D)           0.5 session
+Phase 18 remaining  SMTP (18-C) + channel_members seed (18-D)           ✅ Done
 Phase 19            Decisions + discussions — record_decision,
-                    document_discussion, action dispatch                  1.5 sessions
-Phase 20            GitHub read access — read_file bot tool               1 session
-Phase 21            Artifact dispatch — context + artifact paths
-                    included in every stage handoff                       1.5 sessions
-Phase 22            Workspace context — CONTEXT.md injection              0.5 session
-Phase 23            Auto-approve — bot/* commits skip approval modal      1 session
+                    document_discussion, action dispatch                  ✅ Done
+Phase 20            GitHub read access — read_github_file tool            ✅ Done
+Phase 21            list_directory + confidence-gated auto-approve        ✅ Done
+Phase 22            patch_github_file — surgical edits, commit_file
+                    restricted to new files only                          ✅ Done
 ────────────────────────────────────────────────────────────────────────────────────
-🦆 GUINEA PIG GATE  End of Phase 23
-                    Fashion pipeline M2: bot reads codebase → discusses
-                    design with founder (documented) → commits design doc
-                    (auto-approved) → advances stage → Backend bot reads
-                    artifact + discussion → builds → PR to main (founder
-                    approves) → decision triggers QA dispatch → Casey
-                    acts without being asked
+Phase 23            Workspace context — CONTEXT.md injection              0.5 session
+Phase 24            Autonomous work loop — bots chain work without
+                    founder triggering each step; stage dispatch
+                    auto-starts the receiving bot                         1.5 sessions
+Phase 25            Bot-to-bot messaging — Bot A can ask Bot B a
+                    question mid-task and continue with the answer        1 session
+Phase 26            Escalation + founder notification — bot calls
+                    escalate_to_founder when blocked; completion
+                    notification when pipeline finishes                   0.5 session
 ────────────────────────────────────────────────────────────────────────────────────
-Phase 24            PR review loop                                        1 session
-Phase 25            Long-term memory — feature summary injection          1 session
-Phase 26            Autonomous multi-step work loop                       2 sessions
+🦆 GUINEA PIG GATE  End of Phase 26
+                    Founder discusses M2 spec with PO → gives go-ahead
+                    → sits back. PO briefs Architect autonomously.
+                    Architect designs, briefs Backend. Backend implements,
+                    asks QA to verify. QA signs off. PR opens.
+                    Founder notified: "Done. PR #X ready for review."
+                    Founder only re-engaged for: final PR approval,
+                    credits exhausted, or explicit blocker escalation.
+────────────────────────────────────────────────────────────────────────────────────
+Phase 27            PR review loop — bot responds to GitHub PR comments   1 session
+Phase 28            Long-term memory — feature summary injection          1 session
 ────────────────────────────────────────────────────────────────────────────────────
 Full vision gate    Founder states goal, team ships it                    Ongoing
 ```
