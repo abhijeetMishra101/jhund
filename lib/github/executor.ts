@@ -279,7 +279,19 @@ async function executeAction(
       const branch = String(p.branch ?? defaultBranch)
       const message = String(p.commit_message ?? `patch: update ${filePath}`)
 
-      // Fetch the current file content and SHA
+      // Ensure the branch exists — create it from the default branch if not
+      try {
+        await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` })
+      } catch {
+        const { data: baseRef } = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` })
+        await octokit.rest.git.createRef({
+          owner, repo,
+          ref: `refs/heads/${branch}`,
+          sha: baseRef.object.sha,
+        })
+      }
+
+      // Fetch the current file content and SHA from the (now-existing) branch
       const { data: existing } = await octokit.rest.repos.getContent({
         owner, repo, path: filePath, ref: branch,
       })
