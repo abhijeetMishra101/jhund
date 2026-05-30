@@ -1887,9 +1887,9 @@ describe('respondToMessage — propose_github_action auto-approve fork', () => {
     expect(planPayload.auto_approved).toBe(true)
     expect(planPayload.status).toBe('pending')
 
-    // ⚡ system message was posted
+    // ⚡ system message was posted with step number
     const autoExecContent = (autoExecMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
-    expect(autoExecContent).toContain('⚡ Auto-executing')
+    expect(autoExecContent).toContain('⚡ Step 1:')
     expect(autoExecContent).toContain('Update API docs')
 
     // Claude was called twice: initial + after exec result
@@ -2219,16 +2219,22 @@ describe('respondToMessage — autonomous work loop', () => {
       .mockResolvedValueOnce({ content: [{ type: 'text', text: 'All done! Two files committed.' }], stop_reason: 'end_turn' })
 
     // Plans chain for first inline action
-    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-1'))   // plans insert
-    mockServiceFrom.mockReturnValueOnce(systemMsgChain())            // ⚡ system msg
-    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() }) // plans update approved
-
-    // Plans chain for second inline action
-    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-2'))
-    mockServiceFrom.mockReturnValueOnce(systemMsgChain())
+    const step1SysMsgMock = vi.fn().mockResolvedValue({ data: { id: 'sys-step1' }, error: null })
+    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-1'))
+    mockServiceFrom.mockReturnValueOnce({ insert: step1SysMsgMock })    // ⚡ Step 1
     mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() })
 
-    // Final bot message insert
+    // Plans chain for second inline action
+    const step2SysMsgMock = vi.fn().mockResolvedValue({ data: { id: 'sys-step2' }, error: null })
+    mockServiceFrom.mockReturnValueOnce(plansMockChain('plan-2'))
+    mockServiceFrom.mockReturnValueOnce({ insert: step2SysMsgMock })    // ⚡ Step 2
+    mockServiceFrom.mockReturnValueOnce({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() })
+
+    // ✅ summary message insert (autoStep=2 > 1, posted before Claude's text)
+    const summaryMsgMock = vi.fn().mockResolvedValue({ data: { id: 'summary-msg' }, error: null })
+    mockServiceFrom.mockReturnValueOnce({ insert: summaryMsgMock })
+
+    // Final bot message insert (Claude's text)
     mockServiceFrom.mockReturnValueOnce(completionMsgChain('final-msg'))
 
     const { respondToMessage } = await import('@/lib/bots/index')
@@ -2239,6 +2245,14 @@ describe('respondToMessage — autonomous work loop', () => {
     expect(mockMessagesCreate).toHaveBeenCalledTimes(3)
     // executePlanActions called twice (once per inline action)
     expect(mockExecutePlanActions).toHaveBeenCalledTimes(2)
+    // ⚡ Step messages used numbering
+    const step1Content = (step1SysMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(step1Content).toContain('⚡ Step 1:')
+    const step2Content = (step2SysMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(step2Content).toContain('⚡ Step 2:')
+    // ✅ summary message was posted with the correct step count
+    const summaryContent = (summaryMsgMock.mock.calls[0]?.[0] as Record<string, unknown>).content as string
+    expect(summaryContent).toBe('✅ 2 steps completed')
   })
 
   it('stops at create_pr and creates a plan chip (founder gate preserved)', async () => {

@@ -174,6 +174,10 @@ export async function respondToMessage(
   // Mutable messages array so we can append tool_results
   const messages = [...messageHistory]
 
+  // Tracks how many inline auto-approved actions completed in the work loop.
+  // Used to show a progress summary before Claude's final text when > 1 step ran.
+  let autoStep = 0
+
   let response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 4096,
@@ -269,6 +273,8 @@ export async function respondToMessage(
 
       if (input.confidence === 'auto' && isAutoApprovable(actions) && actions.length > 0) {
         // Execute the actions inline
+        autoStep++
+
         const { data: plan, error: planError } = await supabase
           .from('plans')
           .insert({
@@ -286,12 +292,12 @@ export async function respondToMessage(
           throw new Error(`Failed to create plan: ${planError?.message ?? 'no data'}`)
         }
 
-        // Post visible system message so founder can see what's happening
+        // Post visible system message so founder can see progress step-by-step
         await supabase.from('messages').insert({
           channel_id: channelId,
           author_type: 'system',
           author_id: workspaceId,
-          content: `⚡ Auto-executing: ${input.plain_english_description}`,
+          content: `⚡ Step ${autoStep}: ${input.plain_english_description}`,
           ...(parentMessageId ? { parent_id: parentMessageId } : {}),
         })
 
@@ -766,6 +772,20 @@ export async function respondToMessage(
   }
 
   // 4b. Plain text reply — no GitHub action proposed
+
+  // If the work loop completed more than one auto-approved step, post a brief
+  // summary banner before Claude's narrative so the founder knows the run is done
+  // and can scan "N steps completed" before reading the full explanation.
+  if (autoStep > 1) {
+    await supabase.from('messages').insert({
+      channel_id: channelId,
+      author_type: 'system',
+      author_id: botRole.id,
+      content: `✅ ${autoStep} steps completed`,
+      ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+    })
+  }
+
   const replyText = response.content
     .filter((block) => block.type === 'text')
     .map((block) => (block as Anthropic.TextBlock).text)
