@@ -107,5 +107,5 @@ No DB migrations required. This is a purely code-level change.
 - [ ] PR #93 failure mode is provably impossible (test covers the exact scenario)
 - [ ] No regression on existing `commit_file` new-file creation
 
-**PO sign-off date**: ________________
+**PO sign-off date**: 2026-05-30
 **Notes**:
