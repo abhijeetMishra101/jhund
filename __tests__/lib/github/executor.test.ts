@@ -645,6 +645,42 @@ describe('executePlanActions', () => {
     await expect(executePlanActions(PLAN_ID, WORKSPACE_ID)).rejects.toThrow('2 locations')
   })
 
+  it('patch_github_file: creates the branch from default when it does not exist', async () => {
+    const original = 'line one\nconst X = 5\nline three'
+    // First getRef (branch check) throws 404 — branch doesn't exist
+    mockGitGetRef
+      .mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }))
+      // Second getRef (default branch for new-branch creation) succeeds
+      .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } })
+    mockReposGetContent.mockResolvedValueOnce({
+      data: { type: 'file', content: Buffer.from(original).toString('base64'), sha: 'filesha' },
+    })
+
+    const actions = [{
+      action_type: 'patch_github_file',
+      payload: {
+        file_path: 'docs/api.md',
+        old_string: 'const X = 5',
+        new_string: 'const X = 10',
+        branch: 'bot/new-branch',
+      },
+    }]
+    mockServiceFrom
+      .mockReturnValueOnce(planChain(actions))
+      .mockReturnValueOnce(installationChain())
+      .mockReturnValueOnce(workspaceChain())
+      .mockReturnValueOnce(updateChain())
+
+    const { executePlanActions } = await import('@/lib/github/executor')
+    await executePlanActions(PLAN_ID, WORKSPACE_ID)
+
+    expect(mockGitCreateRef).toHaveBeenCalledWith(expect.objectContaining({
+      ref: 'refs/heads/bot/new-branch',
+      sha: 'base-sha',
+    }))
+    expect(mockReposCreateOrUpdateFileContents).toHaveBeenCalled()
+  })
+
   it('patch_github_file: error message tells bot to re-read on no-match', async () => {
     const original = 'some content'
     mockReposGetContent.mockResolvedValueOnce({
