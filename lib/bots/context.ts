@@ -65,8 +65,10 @@ export async function buildMessageHistory(
     const role = msg.author_type === 'bot' ? 'assistant' : 'user'
     const last = params[params.length - 1]
     if (last && last.role === role) {
-      // Merge with previous same-role turn (rare edge case)
-      last.content = `${last.content}\n\n${msg.content}`
+      // Keep only the most recent turn when consecutive same-role messages appear.
+      // Merging them into a blob corrupts Claude's context when record_decision
+      // fired N times with no bot reply in between (poisoned channel recovery).
+      last.content = msg.content
     } else {
       params.push({ role, content: msg.content })
     }
