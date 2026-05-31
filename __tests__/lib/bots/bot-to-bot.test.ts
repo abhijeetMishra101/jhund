@@ -21,19 +21,17 @@ const TARGET_CHANNEL_ID = 'design-channel-uuid'
 const REPLY_MESSAGE_ID = 'reply-msg-uuid'
 const REPLY_CONTENT = 'Use a two-column layout with sidebar nav.'
 
-function setupChannelMembersMock(channelId = TARGET_CHANNEL_ID) {
-  // Chain: .select().eq().eq().eq().eq().eq() — 5 chained .eq() calls
-  const eqChain = {
-    eq: vi.fn(),
-    then: undefined as unknown,
-  }
-  eqChain.eq.mockReturnValue(eqChain)
-  // Final .eq() resolves with data
+// New query has 3 chained .eq() calls:
+//   .eq('channels.workspace_id', workspaceId)
+//   .eq('channels.channel_type', 'channel')
+//   .eq('bot_roles.role_key', targetRole)
+function setupChannelMembersMock(rows: { channel_id: string; is_primary: boolean }[]) {
+  const eqChain = { eq: vi.fn() }
   let callCount = 0
   eqChain.eq.mockImplementation(() => {
     callCount++
-    if (callCount >= 5) {
-      return Promise.resolve({ data: [{ channel_id: channelId }], error: null })
+    if (callCount >= 3) {
+      return Promise.resolve({ data: rows, error: null })
     }
     return eqChain
   })
@@ -66,7 +64,7 @@ describe('messageTeammate', () => {
   })
 
   it('happy path: finds target channel, posts message, calls respondToMessage, returns reply content', async () => {
-    setupChannelMembersMock()
+    setupChannelMembersMock([{ channel_id: TARGET_CHANNEL_ID, is_primary: true }])
     setupMessageInsertMock()
     mockRespondToMessage.mockResolvedValue(REPLY_MESSAGE_ID)
     setupReplyFetchMock()
@@ -75,7 +73,6 @@ describe('messageTeammate', () => {
     const reply = await messageTeammate(CALLING_BOT_ID, CALLING_BOT_NAME, TARGET_ROLE, 'What layout?', WORKSPACE_ID)
 
     expect(reply).toBe(REPLY_CONTENT)
-    // respondToMessage called with target channel + isBotToBotCall=true
     expect(mockRespondToMessage).toHaveBeenCalledWith(
       TARGET_CHANNEL_ID,
       WORKSPACE_ID,
@@ -85,15 +82,57 @@ describe('messageTeammate', () => {
     )
   })
 
-  it('throws when no target channel found for the role', async () => {
-    // channel_members returns empty array
-    const eqChain = { eq: vi.fn() }
-    eqChain.eq.mockImplementation(() => {
-      let count = 0
-      const inner = { eq: vi.fn().mockImplementation(() => { count++; return count >= 4 ? Promise.resolve({ data: [], error: null }) : inner }) }
-      return inner
+  it('prefers primary membership when multiple channels exist for the role', async () => {
+    const nonPrimaryChannelId = 'other-channel-uuid'
+    setupChannelMembersMock([
+      { channel_id: nonPrimaryChannelId, is_primary: false },
+      { channel_id: TARGET_CHANNEL_ID, is_primary: true },
+    ])
+    setupMessageInsertMock()
+    mockRespondToMessage.mockResolvedValue(REPLY_MESSAGE_ID)
+    setupReplyFetchMock()
+
+    const insertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'posted-msg' }, error: null }),
     })
-    mockServiceFrom.mockReturnValueOnce({ select: vi.fn().mockReturnValue(eqChain) })
+    // Replace the generic insert mock with a spy
+    mockServiceFrom.mockReset()
+    setupChannelMembersMock([
+      { channel_id: nonPrimaryChannelId, is_primary: false },
+      { channel_id: TARGET_CHANNEL_ID, is_primary: true },
+    ])
+    mockServiceFrom.mockReturnValueOnce({ insert: insertMock })
+    mockRespondToMessage.mockResolvedValue(REPLY_MESSAGE_ID)
+    setupReplyFetchMock()
+
+    const { messageTeammate } = await import('@/lib/bots/bot-to-bot')
+    await messageTeammate(CALLING_BOT_ID, CALLING_BOT_NAME, TARGET_ROLE, 'Hello?', WORKSPACE_ID)
+
+    const payload = insertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(payload.channel_id).toBe(TARGET_CHANNEL_ID)
+  })
+
+  it('falls back to first row when no primary membership exists', async () => {
+    const fallbackChannelId = 'fallback-channel-uuid'
+    setupChannelMembersMock([{ channel_id: fallbackChannelId, is_primary: false }])
+    const insertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'posted-msg' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: insertMock })
+    mockRespondToMessage.mockResolvedValue(REPLY_MESSAGE_ID)
+    setupReplyFetchMock()
+
+    const { messageTeammate } = await import('@/lib/bots/bot-to-bot')
+    await messageTeammate(CALLING_BOT_ID, CALLING_BOT_NAME, TARGET_ROLE, 'Hello?', WORKSPACE_ID)
+
+    const payload = insertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(payload.channel_id).toBe(fallbackChannelId)
+  })
+
+  it('throws when no target channel found for the role', async () => {
+    setupChannelMembersMock([])
 
     const { messageTeammate } = await import('@/lib/bots/bot-to-bot')
     await expect(
@@ -103,10 +142,11 @@ describe('messageTeammate', () => {
 
   it('throws when no rows returned from channel_members (null data)', async () => {
     const eqChain = { eq: vi.fn() }
+    let callCount = 0
     eqChain.eq.mockImplementation(() => {
-      let count = 0
-      const inner = { eq: vi.fn().mockImplementation(() => { count++; return count >= 4 ? Promise.resolve({ data: null, error: null }) : inner }) }
-      return inner
+      callCount++
+      if (callCount >= 3) return Promise.resolve({ data: null, error: null })
+      return eqChain
     })
     mockServiceFrom.mockReturnValueOnce({ select: vi.fn().mockReturnValue(eqChain) })
 
@@ -117,8 +157,7 @@ describe('messageTeammate', () => {
   })
 
   it('throws when message insert fails', async () => {
-    setupChannelMembersMock()
-    // Insert fails
+    setupChannelMembersMock([{ channel_id: TARGET_CHANNEL_ID, is_primary: true }])
     mockServiceFrom.mockReturnValueOnce({
       insert: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnThis(),
@@ -133,7 +172,7 @@ describe('messageTeammate', () => {
   })
 
   it('posted message includes calling bot name as author label', async () => {
-    setupChannelMembersMock()
+    setupChannelMembersMock([{ channel_id: TARGET_CHANNEL_ID, is_primary: true }])
     const insertMock = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: { id: 'posted-msg' }, error: null }),
