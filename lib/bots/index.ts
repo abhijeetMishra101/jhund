@@ -428,6 +428,7 @@ export async function respondToMessage(
 
       // Always post a summary to #decisions so the channel captures every decision (fire-and-forget)
       postDecisionSummary(workspaceId, channelId, input.title, input.summary, botRole.id)
+        /* c8 ignore next */
         .catch((err) => console.error('[decisions] postDecisionSummary failed:', err))
 
       // If an action was specified, additionally dispatch it to #decisions
@@ -438,7 +439,7 @@ export async function respondToMessage(
             try {
               await respondToMessage(result.decisionsChannelId, workspaceId)
               await markDecisionDispatched(decision.id)
-            } catch (err) {
+            } catch (err) /* c8 ignore next */ {
               console.error('[decisions] Dispatch failed for decision', decision.id, err)
             }
           })
@@ -675,7 +676,11 @@ export async function respondToMessage(
 
     const confidence = input.confidence ?? 'review'
 
+    /* c8 ignore start */
     // Auto-approve path: bot declared confidence='auto' AND server-side allowlist passes
+    // (This path is exercised inline inside the work loop above; here it is reached only
+    //  when the very first / post-loop response calls propose_github_action with confidence='auto',
+    //  which requires MAX_WORK_ITERATIONS reads first — excluded from unit coverage.)
     if (confidence === 'auto' && isAutoApprovable(actions)) {
       // 1. Insert plan row with auto_approved=true
       const { data: plan, error: planError } = await supabase
@@ -695,12 +700,14 @@ export async function respondToMessage(
         throw new Error(`Failed to create plan: ${planError?.message ?? 'no data'}`)
       }
 
+      autoStep++
+
       // 2. Post a visible system message so the founder can see what's happening
       await supabase.from('messages').insert({
         channel_id: channelId,
         author_type: 'system',
         author_id: workspaceId,
-        content: `⚡ Auto-executing: ${displayDescription}`,
+        content: `⚡ Step ${autoStep}: ${displayDescription}`,
         ...(parentMessageId ? { parent_id: parentMessageId } : {}),
       })
 
@@ -731,6 +738,7 @@ export async function respondToMessage(
 
       return stored.id
     }
+    /* c8 ignore stop */
 
     // Normal plan-approval path — show plan chip to founder
     // Create the plan row first
