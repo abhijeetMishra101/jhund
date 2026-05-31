@@ -220,6 +220,54 @@ export const UNDO_DECISION_TOOL: Anthropic.Tool = {
   },
 }
 
+/** Sends a message to another teammate bot and gets their reply inline. */
+export const MESSAGE_TEAMMATE_TOOL: Anthropic.Tool = {
+  name: 'message_teammate',
+  description:
+    'Send a message to another teammate and get their reply. ' +
+    'Use this when you need input from a specific team member before continuing your work. ' +
+    'The other bot will reply and you will receive their answer as the result. ' +
+    'Do NOT use this to loop endlessly — one question, one answer, then continue.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['ops', 'product', 'backend', 'design', 'security', 'qa', 'ml'],
+        description: 'The role of the teammate to message',
+      },
+      message: {
+        type: 'string',
+        description: 'The message to send — be specific about what you need',
+      },
+    },
+    required: ['role', 'message'],
+  },
+}
+
+/** Asks the founder for input when the bot is blocked and cannot continue. */
+export const ESCALATE_TO_FOUNDER_TOOL: Anthropic.Tool = {
+  name: 'escalate_to_founder',
+  description:
+    'Ask the founder for input when you are blocked and cannot continue without their decision. ' +
+    'Use this sparingly — only when you have a genuine blocker, not for routine check-ins. ' +
+    'The founder will be notified and can reply directly in this channel.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      reason: {
+        type: 'string',
+        description: 'Why you are blocked — what you have tried and what is missing',
+      },
+      question: {
+        type: 'string',
+        description: 'The specific question the founder needs to answer',
+      },
+    },
+    required: ['reason', 'question'],
+  },
+}
+
 /** Signals that a feature is ready to move to the next pipeline stage. */
 export const ADVANCE_FEATURE_STAGE_TOOL: Anthropic.Tool = {
   name: 'advance_feature_stage',
