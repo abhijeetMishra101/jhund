@@ -28,21 +28,24 @@ export async function messageTeammate(
 ): Promise<string> {
   const supabase = createServiceClient()
 
-  // Find the primary channel for the target role in this workspace
+  // Find any channel for the target role in this workspace.
+  // Prefer is_primary=true membership but fall back to any membership so that
+  // channels created without explicit primary flags still work.
   const { data: memberRows } = await supabase
     .from('channel_members')
-    .select('channel_id, bot_roles!inner(role_key), channels!inner(workspace_id, channel_type, is_primary)')
+    .select('channel_id, is_primary, bot_roles!inner(role_key), channels!inner(workspace_id, channel_type)')
     .eq('channels.workspace_id', workspaceId)
     .eq('channels.channel_type', 'channel')
-    .eq('channels.is_primary', true)
-    .eq('is_primary', true)
     .eq('bot_roles.role_key', targetRole)
 
   if (!memberRows || memberRows.length === 0) {
     throw new Error(`No ${targetRole} channel found in this workspace`)
   }
 
-  const targetChannelId = memberRows[0].channel_id
+  // Prefer the primary membership; fall back to first available
+  const preferred = memberRows.find((r) => r.is_primary) ?? memberRows[0]
+
+  const targetChannelId = preferred.channel_id
 
   // Post the calling bot's message into the target channel
   const { data: postedMessage, error: postError } = await supabase
