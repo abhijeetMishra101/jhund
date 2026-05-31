@@ -466,6 +466,17 @@ export async function respondToMessage(
       systemContent = `Failed to record decision: ${message}`
     }
 
+    // Fire-and-forget: persist a bot reply so conversation alternation
+    // (user→assistant→user) is preserved for future Claude calls.
+    // Not awaited — avoids a yield point that could race with dispatch .then().
+    void supabase.from('messages').insert({
+      channel_id: channelId,
+      author_type: 'bot',
+      author_id: botRole.id,
+      content: `Got it — I've recorded that decision.`,
+      ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+    })
+
     const { data: stored, error: insertError } = await supabase
       .from('messages')
       .insert({
@@ -486,6 +497,7 @@ export async function respondToMessage(
   }
 
   // 4a-iii. Handle document_discussion tool
+
   if (toolUseBlock?.name === 'document_discussion') {
     const input = toolUseBlock.input as {
       title: string

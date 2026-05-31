@@ -1000,6 +1000,9 @@ describe('respondToMessage — record_decision tool_use', () => {
     setupBotResolutionMocks()
     mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION })
 
+    // bot reply insert comes first (preserves conversation alternation)
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({}) })
+
     const msgInsert = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: { id: 'sys-decision-ok' }, error: null }),
@@ -1036,6 +1039,9 @@ describe('respondToMessage — record_decision tool_use', () => {
     // postDecisionMessage returns null → dispatch branch still appends suffix
     mockPostDecisionMessage.mockResolvedValue(null)
 
+    // bot reply insert comes first
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({}) })
+
     const msgInsert = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: { id: 'sys-decision-action' }, error: null }),
@@ -1068,6 +1074,9 @@ describe('respondToMessage — record_decision tool_use', () => {
     setupBotResolutionMocks()
     mockRecordDecision.mockRejectedValue(new Error('insert constraint violation'))
 
+    // bot reply insert comes first
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({}) })
+
     const msgInsert = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: { id: 'sys-decision-err' }, error: null }),
@@ -1091,6 +1100,8 @@ describe('respondToMessage — record_decision tool_use', () => {
     setupBotResolutionMocks()
     mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION })
 
+    // bot reply insert succeeds; system chip insert fails
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({}) })
     mockServiceFrom.mockReturnValueOnce(failingInsertChain('db down'))
 
     mockMessagesCreate.mockResolvedValue(
@@ -1110,6 +1121,9 @@ describe('respondToMessage — record_decision tool_use', () => {
       messageId: 'decisions-msg-id',
     })
     mockMarkDecisionDispatched.mockResolvedValue(undefined)
+
+    // bot reply insert comes first
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({}) })
 
     const msgInsert = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
@@ -1149,6 +1163,9 @@ describe('respondToMessage — record_decision tool_use', () => {
     setupBotResolutionMocks()
     mockRecordDecision.mockResolvedValue({ ...MOCK_DECISION })
     mockPostDecisionMessage.mockRejectedValue(new Error('channel lookup failed'))
+
+    // bot reply insert comes first
+    mockServiceFrom.mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({}) })
 
     const msgInsert = vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
