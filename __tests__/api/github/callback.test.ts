@@ -5,6 +5,7 @@ const mockCookieGet = vi.hoisted(() => vi.fn())
 const mockCookieDelete = vi.hoisted(() => vi.fn())
 const mockServiceFrom = vi.hoisted(() => vi.fn())
 const mockListRepos = vi.hoisted(() => vi.fn())
+const mockDeriveContext = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue({
@@ -31,6 +32,10 @@ vi.mock('@/lib/github/auth', () => ({
 
 vi.mock('@/lib/github/triggers', () => ({
   seedDefaultTriggers: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/github/derive-context', () => ({
+  deriveWorkspaceContext: mockDeriveContext,
 }))
 
 const USER = { id: 'user-1' }
@@ -63,6 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockGetUser.mockResolvedValue({ data: { user: USER } })
   mockCookieGet.mockReturnValue({ value: STATE })
+  mockDeriveContext.mockResolvedValue(null)
   stubSupabase()
 })
 
@@ -149,5 +155,96 @@ describe('GET /api/github/callback', () => {
     const { GET } = await import('@/app/api/github/callback/route')
     const res = await GET(makeRequest({ setup_action: 'update' }))
     expect(res.headers.get('location')).toContain('github_error=1')
+  })
+
+  it('auto-derives and stores bot_context when workspace has none after GitHub connect', async () => {
+    mockDeriveContext.mockResolvedValue('Project: my-app\nStack: Next.js\n\nA great app.')
+    const updateEqMock = vi.fn().mockResolvedValue({ error: null })
+    const updateMock = vi.fn().mockReturnValue({ eq: updateEqMock })
+    let workspaceCallCount = 0
+    mockServiceFrom.mockImplementation((table: string) => {
+      if (table === 'users') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { workspace_id: WORKSPACE_ID }, error: null }),
+        }
+      }
+      if (table === 'github_installations') {
+        return { upsert: vi.fn().mockResolvedValue({ error: null }) }
+      }
+      if (table === 'workspaces') {
+        workspaceCallCount++
+        if (workspaceCallCount === 1) {
+          // bot_context check
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ data: { bot_context: null }, error: null }),
+          }
+        }
+        if (workspaceCallCount === 2) {
+          // update bot_context
+          return { update: updateMock }
+        }
+        // slug fetch
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { slug: 'acme' }, error: null }),
+        }
+      }
+      return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null, error: null }) }
+    })
+
+    const { GET } = await import('@/app/api/github/callback/route')
+    await GET(makeRequest({ installation_id: INSTALLATION_ID, state: STATE }))
+
+    expect(mockDeriveContext).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner',
+      'repo'
+    )
+    expect(updateMock).toHaveBeenCalledWith({ bot_context: 'Project: my-app\nStack: Next.js\n\nA great app.' })
+  })
+
+  it('skips deriveWorkspaceContext when bot_context is already set', async () => {
+    mockDeriveContext.mockResolvedValue('Project: my-app\nStack: Next.js')
+    let workspaceCallCount = 0
+    mockServiceFrom.mockImplementation((table: string) => {
+      if (table === 'users') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { workspace_id: WORKSPACE_ID }, error: null }),
+        }
+      }
+      if (table === 'github_installations') {
+        return { upsert: vi.fn().mockResolvedValue({ error: null }) }
+      }
+      if (table === 'workspaces') {
+        workspaceCallCount++
+        if (workspaceCallCount === 1) {
+          // bot_context already set — should stop here
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ data: { bot_context: 'Existing description' }, error: null }),
+          }
+        }
+        // slug fetch
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { slug: 'acme' }, error: null }),
+        }
+      }
+      return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null, error: null }) }
+    })
+
+    const { GET } = await import('@/app/api/github/callback/route')
+    await GET(makeRequest({ installation_id: INSTALLATION_ID, state: STATE }))
+
+    expect(mockDeriveContext).not.toHaveBeenCalled()
   })
 })
