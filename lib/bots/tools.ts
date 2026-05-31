@@ -249,9 +249,9 @@ export const MESSAGE_TEAMMATE_TOOL: Anthropic.Tool = {
 export const ESCALATE_TO_FOUNDER_TOOL: Anthropic.Tool = {
   name: 'escalate_to_founder',
   description:
-    'Ask the founder for input when you are blocked and cannot continue without their decision. ' +
-    'Use this sparingly — only when you have a genuine blocker, not for routine check-ins. ' +
-    'The founder will be notified and can reply directly in this channel.',
+    'Ask the founder a question when you are blocked and cannot continue without their input. ' +
+    'Use this sparingly — only for genuine blockers, not routine updates. ' +
+    'Your question will appear in the channel and the founder can reply directly to resume your work.',
   input_schema: {
     type: 'object' as const,
     properties: {

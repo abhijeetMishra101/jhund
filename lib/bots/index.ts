@@ -698,7 +698,7 @@ export async function respondToMessage(
   if (toolUseBlock?.name === 'escalate_to_founder') {
     const input = toolUseBlock.input as { reason: string; question: string }
 
-    const content = `⚠️ **${botRole.display_name} needs your input**\n\n${input.reason}\n\n**Question:** ${input.question}`
+    const content = `💬 **${botRole.display_name} has a question for you**\n\n${input.reason}\n\n**Question:** ${input.question}`
 
     const { data: stored } = await supabase
       .from('messages')
