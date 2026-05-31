@@ -466,10 +466,10 @@ export async function respondToMessage(
       systemContent = `Failed to record decision: ${message}`
     }
 
-    // Store a bot reply first so conversation alternation (user→assistant→user)
-    // is preserved in message history. Without this, consecutive user messages
-    // get merged by buildMessageHistory and corrupt future Claude context.
-    await supabase.from('messages').insert({
+    // Fire-and-forget: persist a bot reply so conversation alternation
+    // (user→assistant→user) is preserved for future Claude calls.
+    // Not awaited — avoids a yield point that could race with dispatch .then().
+    void supabase.from('messages').insert({
       channel_id: channelId,
       author_type: 'bot',
       author_id: botRole.id,
