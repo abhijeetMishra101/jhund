@@ -789,7 +789,7 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
 
     expect(mockGetDispatchTargets).toHaveBeenCalledWith(WORKSPACE_ID, 2)
     // postHandoffMessage called for the target channel
-    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch', 'Dark Mode', 2)
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch', 'Dark Mode', 2, 'Use cases are ready')
   })
 
   it('dispatch fires parallel callback for parallel targets', async () => {
@@ -812,8 +812,8 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-a', 'Dark Mode', 2)
-    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-b', 'Dark Mode', 2)
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-a', 'Dark Mode', 2, 'Use cases are ready')
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-b', 'Dark Mode', 2, 'Use cases are ready')
   })
 
   it('dispatch .catch() handles getDispatchTargets rejection gracefully', async () => {
