@@ -1,0 +1,3 @@
+# Project Overview
+
+Jhund is an AI-powered team workspace where every teammate is a Claude-powered bot. Instead of using traditional software tools, founders and teams interact with a set of specialised AI teammates — each with a defined role such as engineering, product, or strategy — that collaborate inside a shared workspace. Each bot has access to the team's GitHub repo, product pipeline, and decision log, allowing it to take real actions like opening pull requests, tracking features, and recording decisions. The goal is to compress the gap between idea and execution by giving small teams the leverage of a full AI-staffed organisation.
