@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildMessageHistory } from './context'
-import { READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+import { READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL, MESSAGE_TEAMMATE_TOOL, ESCALATE_TO_FOUNDER_TOOL } from './tools'
+import { messageTeammate } from './bot-to-bot'
 import { readGithubFile, listDirectory, FileNotFoundError, FileAccessDeniedError, DirectoryNotFoundError, DirectoryAccessDeniedError } from '@/lib/github/reader'
 import { isAutoApprovable } from './auto-approve'
 import { executePlanActions } from '@/lib/github/executor'
@@ -15,7 +16,7 @@ import { getRoleSystemPrompt } from '@/lib/templates/roles'
 import type { BotRole } from '@/lib/supabase/types'
 import type { GateType } from '@/lib/feature-stages'
 
-export { READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL } from './tools'
+export { READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL, MESSAGE_TEAMMATE_TOOL, ESCALATE_TO_FOUNDER_TOOL } from './tools'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -115,7 +116,8 @@ export async function respondToMessage(
   channelId: string,
   workspaceId: string,
   parentMessageId?: string,
-  messageContent?: string
+  messageContent?: string,
+  isBotToBotCall?: boolean
 ): Promise<string> {
   const supabase = createServiceClient()
 
@@ -162,7 +164,19 @@ export async function respondToMessage(
   //
   // MAX_WORK_ITERATIONS covers both reads and action steps combined.
   const MAX_WORK_ITERATIONS = 10
-  const tools = [READ_GITHUB_FILE_TOOL, LIST_DIRECTORY_TOOL, PROPOSE_GITHUB_ACTION_TOOL, ADVANCE_FEATURE_STAGE_TOOL, CREATE_FEATURE_TOOL, RECORD_DECISION_TOOL, DOCUMENT_DISCUSSION_TOOL, UNDO_DECISION_TOOL]
+  const tools = [
+    READ_GITHUB_FILE_TOOL,
+    LIST_DIRECTORY_TOOL,
+    PROPOSE_GITHUB_ACTION_TOOL,
+    ADVANCE_FEATURE_STAGE_TOOL,
+    CREATE_FEATURE_TOOL,
+    RECORD_DECISION_TOOL,
+    DOCUMENT_DISCUSSION_TOOL,
+    UNDO_DECISION_TOOL,
+    // MESSAGE_TEAMMATE_TOOL is excluded for bot-to-bot calls to prevent infinite recursion
+    ...(isBotToBotCall ? [] : [MESSAGE_TEAMMATE_TOOL]),
+    ESCALATE_TO_FOUNDER_TOOL,
+  ]
   const system = [
     {
       type: 'text' as const,
@@ -587,7 +601,7 @@ export async function respondToMessage(
 
           const dispatchOne = async (target: typeof targets[0]) => {
             try {
-              await postHandoffMessage(target.channelId, featureTitle, input.to_stage)
+              await postHandoffMessage(target.channelId, featureTitle, input.to_stage, input.notes)
               await respondToMessage(target.channelId, workspaceId)
             } catch (err) {
               console.error('[dispatch] Handoff failed for channel', target.channelId, err)
@@ -626,7 +640,82 @@ export async function respondToMessage(
     return stored.id
   }
 
-  // 4a-v. Handle propose_github_action tool
+  // 4a-vi. Handle message_teammate tool
+  if (toolUseBlock?.name === 'message_teammate') {
+    const input = toolUseBlock.input as { role: string; message: string }
+
+    let reply: string
+    try {
+      reply = await messageTeammate(botRole.id, botRole.display_name, input.role, input.message, workspaceId)
+    } catch (err) {
+      reply = `Could not reach that teammate: ${err instanceof Error ? err.message : 'unknown error'}`
+    }
+
+    // Feed reply back as tool_result and re-invoke Claude to continue
+    messages.push({ role: 'assistant' as const, content: response.content })
+    messages.push({
+      role: 'user' as const,
+      content: [{ type: 'tool_result' as const, tool_use_id: toolUseBlock.id, content: reply }],
+    })
+
+    response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      tools,
+      system,
+      messages,
+    })
+
+    // Store and return the final response after Claude continues
+    const finalTextBlocks = response.content
+      .filter((b) => b.type === 'text')
+      .map((b) => (b as Anthropic.TextBlock).text)
+      .join('\n')
+      .trim()
+
+    const finalContent = finalTextBlocks || 'Done.'
+
+    const { data: stored, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'bot',
+        author_id: botRole.id,
+        content: finalContent,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !stored) {
+      throw new Error(`Failed to store bot reply: ${insertError?.message ?? 'no data'}`)
+    }
+
+    return stored.id
+  }
+
+  // 4a-vii. Handle escalate_to_founder tool
+  if (toolUseBlock?.name === 'escalate_to_founder') {
+    const input = toolUseBlock.input as { reason: string; question: string }
+
+    const content = `💬 **${botRole.display_name} has a question for you**\n\n${input.reason}\n\n**Question:** ${input.question}`
+
+    const { data: stored } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_type: 'system',
+        author_id: botRole.id,
+        content,
+        ...(parentMessageId ? { parent_id: parentMessageId } : {}),
+      })
+      .select('id')
+      .single()
+
+    return stored!.id
+  }
+
+  // 4a-viii. Handle propose_github_action tool
   if (toolUseBlock) {
     const input = toolUseBlock.input as {
       plain_english_description: string

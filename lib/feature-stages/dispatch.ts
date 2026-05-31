@@ -18,7 +18,7 @@ export const STAGE_DISPATCH: Record<number, { roles: string[]; parallel: boolean
 }
 
 /** Human-readable handoff message for each stage (feature title is interpolated). */
-export function handoffMessage(featureTitle: string, toStage: number): string {
+export function handoffMessage(featureTitle: string, toStage: number, context?: string): string {
   const messages: Record<number, string> = {
     2: `🔔 **${featureTitle}** has entered Requirements (Stage 2). Please run a feasibility review — reply Clear or Red Flag with your reasoning.`,
     3: `🔔 **${featureTitle}** cleared feasibility review. Design (Stage 3) is starting — please create the wireframes and spec.`,
@@ -27,7 +27,11 @@ export function handoffMessage(featureTitle: string, toStage: number): string {
     6: `🔔 **${featureTitle}** build is complete. QA (Stage 6) is starting — please verify all use cases.`,
     7: `🚀 **${featureTitle}** has shipped! Please announce to the team.`,
   }
-  return messages[toStage] ?? `🔔 **${featureTitle}** has advanced to Stage ${toStage}.`
+  const base = messages[toStage] ?? `🔔 **${featureTitle}** has advanced to Stage ${toStage}.`
+  if (context) {
+    return `${base}\n\n**Handed off by the previous team:**\n${context}`
+  }
+  return base
 }
 
 export interface DispatchTarget {
@@ -73,7 +77,8 @@ export async function getDispatchTargets(
 export async function postHandoffMessage(
   channelId: string,
   featureTitle: string,
-  toStage: number
+  toStage: number,
+  context?: string
 ): Promise<string> {
   const db = createServiceClient()
 
@@ -83,7 +88,7 @@ export async function postHandoffMessage(
       channel_id: channelId,
       author_type: 'system',
       author_id: '00000000-0000-0000-0000-000000000000',
-      content: handoffMessage(featureTitle, toStage),
+      content: handoffMessage(featureTitle, toStage, context),
     })
     .select('id')
     .single()

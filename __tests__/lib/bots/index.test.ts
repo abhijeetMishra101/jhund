@@ -16,6 +16,7 @@ const mockUndoDecision = vi.hoisted(() => vi.fn())
 const mockReadGithubFile = vi.hoisted(() => vi.fn())
 const mockListDirectory = vi.hoisted(() => vi.fn())
 const mockExecutePlanActions = vi.hoisted(() => vi.fn())
+const mockMessageTeammate = vi.hoisted(() => vi.fn())
 
 // ── Module mocks (hoisted before imports) ────────────────────────────────────
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -81,6 +82,10 @@ vi.mock('@/lib/github/reader', () => ({
   NoGithubInstallationError: class NoGithubInstallationError extends Error {
     constructor() { super('No GitHub installation linked to this workspace'); this.name = 'NoGithubInstallationError' }
   },
+}))
+
+vi.mock('@/lib/bots/bot-to-bot', () => ({
+  messageTeammate: mockMessageTeammate,
 }))
 
 vi.mock('@/lib/github/executor', () => ({
@@ -789,7 +794,7 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
 
     expect(mockGetDispatchTargets).toHaveBeenCalledWith(WORKSPACE_ID, 2)
     // postHandoffMessage called for the target channel
-    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch', 'Dark Mode', 2)
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch', 'Dark Mode', 2, 'Use cases are ready')
   })
 
   it('dispatch fires parallel callback for parallel targets', async () => {
@@ -812,8 +817,8 @@ describe('respondToMessage — advance_feature_stage tool_use', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-a', 'Dark Mode', 2)
-    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-b', 'Dark Mode', 2)
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-a', 'Dark Mode', 2, 'Use cases are ready')
+    expect(mockPostHandoffMessage).toHaveBeenCalledWith('target-ch-b', 'Dark Mode', 2, 'Use cases are ready')
   })
 
   it('dispatch .catch() handles getDispatchTargets rejection gracefully', async () => {
@@ -2323,5 +2328,149 @@ describe('respondToMessage — autonomous work loop', () => {
         (m.content as Array<{ type: string }>).some((c) => c.type === 'tool_result')
     )
     expect(JSON.stringify(toolResultMsg)).toContain('Branch not found')
+  })
+})
+
+// ── Phase 25: message_teammate tool ─────────────────────────────────────────
+describe('respondToMessage — message_teammate tool', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+  })
+
+  function messageTeammateToolResponse(role = 'design', message = 'What is the preferred layout?') {
+    return {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-msg-1',
+          name: 'message_teammate',
+          input: { role, message },
+        },
+      ],
+      stop_reason: 'tool_use',
+    }
+  }
+
+  it('happy path: calls messageTeammate, injects reply as tool_result, re-invokes Claude, stores final reply', async () => {
+    setupBotResolutionMocks()
+    mockMessageTeammate.mockResolvedValue("Use a two-column layout with sidebar nav.")
+
+    // First Claude call → message_teammate tool; second → plain text after tool_result
+    mockMessagesCreate
+      .mockResolvedValueOnce(messageTeammateToolResponse('design', 'What layout?'))
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: 'Got it — two-column layout confirmed.' }],
+        stop_reason: 'end_turn',
+      })
+
+    // Final bot message insert
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'reply-msg-id' }, error: null }),
+      }),
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('reply-msg-id')
+    expect(mockMessageTeammate).toHaveBeenCalledWith(
+      BOT_ROLE.id,
+      BOT_ROLE.display_name,
+      'design',
+      'What layout?',
+      WORKSPACE_ID
+    )
+    // Claude called twice: initial + after tool_result injected
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2)
+    // Second call should have tool_result in messages
+    const secondCall = mockMessagesCreate.mock.calls[1]?.[0] as Record<string, unknown>
+    const msgs = secondCall.messages as Array<{ role: string; content: unknown }>
+    const toolResultMsg = msgs.find(
+      (m) => m.role === 'user' && Array.isArray(m.content) &&
+        (m.content as Array<{ type: string }>).some((c) => c.type === 'tool_result')
+    )
+    expect(JSON.stringify(toolResultMsg)).toContain('two-column layout')
+  })
+
+  it('messageTeammate failure: injects error as tool_result and Claude continues gracefully', async () => {
+    setupBotResolutionMocks()
+    mockMessageTeammate.mockRejectedValue(new Error('No design channel found in this workspace'))
+
+    mockMessagesCreate
+      .mockResolvedValueOnce(messageTeammateToolResponse('design', 'What layout?'))
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: "I couldn't reach Design, I'll proceed with my best guess." }],
+        stop_reason: 'end_turn',
+      })
+
+    mockServiceFrom.mockReturnValueOnce({
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'fallback-msg' }, error: null }),
+      }),
+    })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('fallback-msg')
+    // Error message injected as tool_result
+    const secondCall = mockMessagesCreate.mock.calls[1]?.[0] as Record<string, unknown>
+    const msgs = secondCall.messages as Array<{ role: string; content: unknown }>
+    const toolResultMsg = msgs.find(
+      (m) => m.role === 'user' && Array.isArray(m.content) &&
+        (m.content as Array<{ type: string }>).some((c) => c.type === 'tool_result')
+    )
+    expect(JSON.stringify(toolResultMsg)).toContain('Could not reach that teammate')
+  })
+})
+
+// ── Phase 25: escalate_to_founder tool ──────────────────────────────────────
+describe('respondToMessage — escalate_to_founder tool', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockServiceFrom.mockReset()
+  })
+
+  it('posts 💬 question message and returns its id', async () => {
+    setupBotResolutionMocks()
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool-esc-1',
+          name: 'escalate_to_founder',
+          input: {
+            reason: 'I found two conflicting requirements in the spec.',
+            question: 'Should the modal be blocking or non-blocking?',
+          },
+        },
+      ],
+      stop_reason: 'tool_use',
+    })
+
+    const insertMock = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'escalation-msg-id' }, error: null }),
+    })
+    mockServiceFrom.mockReturnValueOnce({ insert: insertMock })
+
+    const { respondToMessage } = await import('@/lib/bots/index')
+    const id = await respondToMessage(CHANNEL_ID, WORKSPACE_ID)
+
+    expect(id).toBe('escalation-msg-id')
+
+    const payload = insertMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(payload.author_type).toBe('system')
+    expect(payload.content).toContain('💬')
+    expect(payload.content).toContain('Sam has a question for you')
+    expect(payload.content).toContain('Should the modal be blocking or non-blocking?')
+    expect(payload.content).toContain('I found two conflicting requirements')
+    // Claude is NOT called a second time — bot stops and waits
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(1)
   })
 })
