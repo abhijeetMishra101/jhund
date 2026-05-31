@@ -86,8 +86,8 @@ describe('buildMessageHistory', () => {
     expect(result).toEqual([{ role: 'user', content: 'hello' }])
   })
 
-  it('merges consecutive same-role messages', async () => {
-    // DB newest-first → reverse → [first, second]
+  it('keeps most recent when consecutive same-role messages appear', async () => {
+    // DB newest-first → reverse → [first, second]; second is kept (most recent)
     mockServiceFrom.mockReturnValueOnce(makeChain([
       { author_type: 'user', content: 'second' }, // newest
       { author_type: 'user', content: 'first' },   // oldest
@@ -95,7 +95,26 @@ describe('buildMessageHistory', () => {
     const { buildMessageHistory } = await import('@/lib/bots/context')
     const result = await buildMessageHistory('channel-1')
     expect(result).toHaveLength(1)
-    expect(result[0].content).toBe('first\n\nsecond')
+    expect(result[0].content).toBe('second')
+  })
+
+  it('recovers a poisoned channel — N unanswered user messages collapse to most recent', async () => {
+    // Simulates a channel where record_decision fired 3× with no bot reply stored.
+    // DB newest-first → after reverse: [msg1, msg2, msg3, bot-reply, msg4]
+    mockServiceFrom.mockReturnValueOnce(makeChain([
+      { author_type: 'user', author_id: 'user-uuid', content: 'msg4 most recent ask' }, // newest
+      { author_type: 'bot', author_id: 'bot-uuid', content: 'got it' },
+      { author_type: 'user', author_id: 'user-uuid', content: 'msg3 unanswered' },
+      { author_type: 'user', author_id: 'user-uuid', content: 'msg2 unanswered' },
+      { author_type: 'user', author_id: 'user-uuid', content: 'msg1 oldest' },
+    ]))
+    const { buildMessageHistory } = await import('@/lib/bots/context')
+    const result = await buildMessageHistory('channel-1')
+    // msg1+msg2+msg3 collapse to msg3; then bot-reply; then msg4 → 3 turns total
+    expect(result).toHaveLength(3)
+    expect(result[0]).toEqual({ role: 'user', content: 'msg3 unanswered' })
+    expect(result[1]).toEqual({ role: 'assistant', content: 'got it' })
+    expect(result[2]).toEqual({ role: 'user', content: 'msg4 most recent ask' })
   })
 
   it('drops leading assistant turns (Claude requires user first)', async () => {
